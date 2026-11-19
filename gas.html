@@ -115,6 +115,11 @@ details ol{padding-left:20px;margin:8px 0}
 .sum{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .drop{border:2px dashed var(--line);border-radius:12px;padding:14px;text-align:center;margin-bottom:10px}
 .cnt{font-size:12px;color:var(--muted);text-align:right;margin-top:2px}
+.symbar{display:flex;flex-wrap:wrap;gap:4px;padding:6px;background:#f2f4f7;border-radius:10px}
+.symbar button{padding:4px 8px;font-size:14px;font-weight:500;border-radius:7px;min-width:34px}
+.pv{border:1px dashed var(--line);border-radius:10px;padding:8px 10px;background:#fcfcfd;font-size:14px}
+.pv:empty::before{content:'Pratinjau muncul di sini';color:var(--muted)}
+mjx-container{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -194,10 +199,11 @@ function aman(s){return String(s||'').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/
 
 window.GASH={LET,NAMA_BENTUK,BAGIAN,acakJD,acakURT,kunciTeks,shuffleSeed,hash};
 
-function make(kind,P){
+function make(kind,P,R){
+  R=R||{on:false,map:{}};
   const D=window.docx;
   if(!D) throw new Error('Pustaka dokumen belum termuat.');
-  const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,WidthType,AlignmentType,BorderStyle,VerticalMergeType,ShadingType,PageOrientation,TableLayoutType,VerticalAlign}=D;
+  const {Document,Packer,Paragraph,TextRun,ImageRun,Table,TableRow,TableCell,WidthType,AlignmentType,BorderStyle,VerticalMergeType,ShadingType,PageOrientation,TableLayoutType,VerticalAlign}=D;
   const I=P.identitas||{};
   const NONE={style:BorderStyle.NONE,size:0,color:'FFFFFF'};
   const NOB={top:NONE,bottom:NONE,left:NONE,right:NONE,insideHorizontal:NONE,insideVertical:NONE};
@@ -209,10 +215,24 @@ function make(kind,P){
     return {props:{page:{size:{width:sz.w,height:sz.h,orientation:land?PageOrientation.LANDSCAPE:PageOrientation.PORTRAIT},margin:{top:m,bottom:m,left:m,right:m}}},usable:(land?sz.h:sz.w)-2*m};
   }
   function scale(ws,total){const s=ws.reduce((a,b)=>a+b,0);const o=ws.map(w=>Math.floor(w*total/s));o[o.length-1]+=total-o.reduce((a,b)=>a+b,0);return o}
+  // satu baris teks -> TextRun + ImageRun (rumus $...$ menjadi gambar inline)
+  function runs(line,o){
+    const tr=t=>new TextRun({text:t,bold:o.bold,italics:o.italic,size:o.size,font:o.font});
+    if(!R.on||line.indexOf('$')<0) return [tr(line)];
+    const out=[];const re=/\$([^$\n]+?)\$/g;let m,last=0;
+    while((m=re.exec(line))){
+      if(m.index>last) out.push(tr(line.slice(last,m.index)));
+      const im=R.map[m[1].trim()];
+      out.push(im?new ImageRun({data:im.data,transformation:{width:im.w,height:im.h}}):tr(m[0]));
+      last=re.lastIndex;
+    }
+    if(last<line.length) out.push(tr(line.slice(last)));
+    return out.length?out:[tr('')];
+  }
   function para(text,o={}){
-    const lines=String(text==null?'':text).split('\n');
-    return new Paragraph({alignment:o.align,spacing:{after:o.after==null?0:o.after,before:o.before||0},indent:o.indent,keepNext:o.keepNext,
-      children:lines.map((ln,i)=>new TextRun({text:ln,bold:o.bold,italics:o.italic,size:o.size,font:o.font,break:i>0?1:undefined}))});
+    const lines=String(text==null?'':text).split('\n');const ch=[];
+    lines.forEach((ln,i)=>{if(i>0)ch.push(new TextRun({text:'',break:1}));ch.push(...runs(ln,o))});
+    return new Paragraph({alignment:o.align,spacing:{after:o.after==null?0:o.after,before:o.before||0},indent:o.indent,keepNext:o.keepNext,children:ch});
   }
   // teks dengan blok kode ```...``` -> paragraf (kode memakai Courier New)
   function rich(text,o={}){
@@ -224,7 +244,7 @@ function make(kind,P){
       seg.split('\n').forEach((line,j)=>{
         const pre=(j===0&&out.length===0&&o.prefix)?o.prefix:'';
         out.push(new Paragraph({indent:(out.length===0?o.indentFirst:null)||o.indent,spacing:{after:0},keepNext:o.keepNext,
-          children:[new TextRun({text:pre+(line||''),font:code?'Courier New':undefined,size:code?(o.size?o.size-2:22):o.size,bold:o.bold})]}));
+          children:code?[new TextRun({text:pre+(line||''),font:'Courier New',size:o.size?o.size-2:22,bold:o.bold})]:(pre?[new TextRun({text:pre,size:o.size,bold:o.bold})]:[]).concat(runs(line||'',{size:o.size,bold:o.bold}))}));
       });
     });
     if(!out.length) out.push(new Paragraph({indent:o.indentFirst||o.indent,children:[new TextRun({text:o.prefix||'',size:o.size})]}));
@@ -446,7 +466,7 @@ function make(kind,P){
 }
 window.GAS_EXPORT={
   build:make,
-  async make(kind,P){const {doc,name,Packer}=make(kind,P);const blob=await Packer.toBlob(doc);return {blob,name}}
+  async make(kind,P,R){const {doc,name,Packer}=make(kind,P,R);const blob=await Packer.toBlob(doc);return {blob,name}}
 };
 })();
 </script>
@@ -478,6 +498,7 @@ const TIPE={
 const LEVELS=['C1','C2','C3','C4','C5','C6'];
 const STEPS=['Identitas','Materi & CP','Kisi-kisi','Soal','Ekspor'];
 const URL_DOCX=['https://unpkg.com/docx@8.5.0/build/index.umd.js','https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js'];
+const URL_MJ=['https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js','https://unpkg.com/mathjax@3.2.2/es5/tex-svg.js'];
 const URL_PDF=['https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js','https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'];
 
 /* ---------- proyek ---------- */
@@ -487,7 +508,7 @@ function proyekBaru(prev){
   return {versi:1,dibuat:new Date().toISOString(),step:1,
     identitas:{sekolah:i.sekolah||'',asesmen:'Asesmen Sumatif Akhir Semester (ASAS)',tahun:tahunAjar(),jenjang:i.jenjang||'SMA',mapel:'',kelas:'',semester:'',kurikulum:'Kurikulum Merdeka',waktu:'90 menit',buku:'',penulis:i.penulis||'',nipPenulis:i.nipPenulis||'',kepsek:i.kepsek||'',nipKepsek:i.nipKepsek||'',kota:i.kota||'',tanggal:''},
     materi:'',sumber:[],cp:[{kode:'1',teks:''}],topik:'',
-    bp:{PG:20,PGX:0,BNR:0,JD:0,JDX:0,URT:0,SKT:0,ESY:5,opsi:5,l1:30,l2:50,l3:20,bahasa:'Indonesia',catatan:''},
+    bp:{PG:20,PGX:0,BNR:0,JD:0,JDX:0,URT:0,SKT:0,ESY:5,opsi:5,l1:30,l2:50,l3:20,bahasa:'Indonesia',catatan:'',rumus:false,rumusManual:false},
     kisi:[],soal:{},ekspor:{kertas:'A4',absPG:false}};
 }
 function muatProyek(){try{const p=JSON.parse(localStorage.getItem(LS_P)||'null');if(p&&p.versi)return lengkapi(p)}catch(e){}return null}
@@ -524,6 +545,66 @@ async function tunggu(ms,msg){const end=Date.now()+ms;while(Date.now()<end){if(S
 function loadScript(urls){return new Promise((res,rej)=>{let i=0;const next=()=>{if(i>=urls.length)return rej(new Error('Gagal memuat pustaka dari internet. Periksa koneksi.'));const s=document.createElement('script');s.src=urls[i++];s.onload=()=>res();s.onerror=()=>{s.remove();next()};document.head.appendChild(s)};next()})}
 async function siapDocx(){if(!window.docx)await loadScript(URL_DOCX)}
 async function siapPdf(){if(!window.pdfjsLib){await loadScript(URL_PDF);const base=[...document.scripts].map(s=>s.src).find(s=>/pdf\.min\.js$/.test(s));window.pdfjsLib.GlobalWorkerOptions.workerSrc=base.replace(/pdf\.min\.js$/,'pdf.worker.min.js')}}
+async function siapMJ(){
+  if(window.MathJax&&window.MathJax.tex2svgPromise)return;
+  window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[]},svg:{fontCache:'none'},
+    options:{skipHtmlTags:['script','noscript','style','textarea','pre','code','select','option']},startup:{typeset:false}};
+  await loadScript(URL_MJ);await window.MathJax.startup.promise;
+}
+async function typeset(el){
+  if(!P.bp.rumus||!el||el.textContent.indexOf('$')<0)return;
+  try{await siapMJ();window.MathJax.typesetClear([el]);await window.MathJax.typesetPromise([el])}catch(e){}
+}
+// rumus LaTeX -> PNG ukuran "Sedang" (sesuai hasil uji impor CBT)
+const EX_PX=9,PAD=2,rumusCache=new Map();
+async function texPng(tex){
+  const node=await window.MathJax.tex2svgPromise(tex,{display:false});
+  const svg=node.querySelector('svg');
+  if(!svg||svg.querySelector('[data-mml-node="merror"]'))throw new Error('LaTeX tidak valid');
+  const w=parseFloat(svg.getAttribute('width'))*EX_PX,h=parseFloat(svg.getAttribute('height'))*EX_PX;
+  svg.setAttribute('width',w);svg.setAttribute('height',h);svg.setAttribute('xmlns','http://www.w3.org/2000/svg');svg.style.color='#000';
+  const img=new Image();img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(svg));
+  await img.decode();
+  const W=Math.ceil(w)+PAD*2,H=Math.ceil(h)+PAD*2;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const g=cv.getContext('2d');
+  g.fillStyle='#fff';g.fillRect(0,0,W,H);g.drawImage(img,PAD,PAD,w,h);
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+  return {data:new Uint8Array(await blob.arrayBuffer()),w:W,h:H};
+}
+const RE_RUMUS=/\$([^$\n]+?)\$/g;
+function kumpulRumus(){
+  const set=new Set();
+  const walk=v=>{if(typeof v==='string'){let m;RE_RUMUS.lastIndex=0;while((m=RE_RUMUS.exec(v)))set.add(m[1].trim())}else if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')for(const k in v){if(k!=='cek')walk(v[k])}};
+  walk(P.soal);P.kisi.forEach(r=>{walk(r.indikator);walk(r.materi)});
+  return [...set];
+}
+async function siapRumus(){
+  if(!P.bp.rumus)return {on:false,map:{},gagal:[]};
+  const list=kumpulRumus();const map={},gagal=[];
+  if(!list.length)return {on:true,map,gagal};
+  await siapMJ();let i=0;
+  for(const t of list){
+    $('#busyProg').textContent=`Mengubah rumus ${++i}/${list.length} menjadi gambar`;
+    if(!rumusCache.has(t)){try{rumusCache.set(t,await texPng(t))}catch(e){rumusCache.set(t,null)}}
+    const r=rumusCache.get(t);if(r)map[t]=r;else gagal.push(t);
+  }
+  return {on:true,map,gagal};
+}
+function teksSoal(s){
+  return [s.stem,s.pembahasan,s.kunci,s.pedoman].concat(s.opsi||[],(s.pernyataan||[]).map(p=>p.teks),(s.pasangan||[]).flatMap(p=>[p.kiri,p.kanan]),s.pengecoh||[],s.urutan||[]).filter(x=>typeof x==='string');
+}
+const SIMBOL=[['x²','²'],['x³','³'],['√','√'],['π','π'],['≤','≤'],['≥','≥'],['≠','≠'],['±','±'],['×','×'],['÷','÷'],['°','°'],['∠','∠'],['∞','∞'],['θ','θ'],
+ ['a/b','$\\dfrac{a}{b}$'],['√x','$\\sqrt{x}$'],['ⁿ√x','$\\sqrt[n]{x}$'],['xⁿ','$x^{n}$'],['xₙ','$x_{n}$'],['lim','$\\lim_{x \\to a} f(x)$'],['Σ','$\\sum_{i=1}^{n} i$'],['∫','$\\int_{a}^{b} f(x)\\,dx$'],['ᵃlog','$^{a}\\log b$'],['matriks','$\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$']];
+let lastField=null,pvT=null;
+function pratinjau(card){
+  const pv=card&&card.querySelector('.pv');if(!pv)return;
+  const g=f=>card.querySelector(`[data-f="${f}"]`);
+  let h=fmt(g('stem').value);
+  const op=[...card.querySelectorAll('[data-f="opsi"]')];
+  if(op.length)h+='<ul class="opts">'+op.map((e,i)=>`<li><b>${LET[i]}.</b>${fmt(e.value)}</li>`).join('')+'</ul>';
+  ['bnr','jd','pengecoh','urt','kunci','pedoman'].forEach(f=>{if(g(f)&&g(f).value.trim())h+=`<div class="small" style="margin-top:6px">${fmt(g(f).value)}</div>`});
+  pv.innerHTML=h;typeset(pv);
+}
 function unduh(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000)}
 function fmt(t){
   const parts=String(t||'').split(/```[a-zA-Z0-9]*\n?/);
@@ -556,8 +637,14 @@ function ambilTeks(c,d){
   if(ch&&ch.finish_reason==='length')throw new Error('Jawaban AI terpotong (terlalu panjang). Kecilkan "Soal per permintaan" di Pengaturan AI.');
   return (ch&&ch.message&&ch.message.content)||'';
 }
+const TEXCMD='dfrac|tfrac|frac|sqrt|times|div|pm|mp|cdots|cdot|ldots|dots|leq|geq|neq|le|ge|ne|approx|equiv|sim|cong|infty|lim|to|sum|prod|int|oint|log|ln|sin|cos|tan|sec|csc|cot|arcsin|arccos|arctan|alpha|beta|gamma|delta|Delta|epsilon|varepsilon|theta|lambda|mu|nu|pi|rho|sigma|Sigma|tau|phi|varphi|omega|Omega|left|right|big|Big|begin|end|matrix|pmatrix|bmatrix|vmatrix|text|mathrm|mathbf|operatorname|quad|qquad|circ|angle|triangle|overline|underline|overrightarrow|vec|hat|bar|in|notin|subseteq|subset|supset|cup|cap|emptyset|varnothing|forall|exists|Rightarrow|rightarrow|Leftarrow|leftarrow|Leftrightarrow|leftrightarrow|iff|implies|binom|perp|parallel|therefore|because|mid|nmid|lfloor|rfloor|lceil|rceil|displaystyle|limits|degree';
+const RE_CMD=new RegExp('(?<!\\\\)\\\\(?=(?:'+TEXCMD+')(?![a-zA-Z]))','g');
+// AI sering lupa menggandakan backslash LaTeX di JSON (\frac terbaca sebagai form-feed + "rac"). Perbaiki sebelum parse.
+function perbaikiBackslash(t){
+  return t.replace(RE_CMD,'\\\\').replace(/(?<!\\)\\(?!["\\\/bfnrtu])/g,'\\\\').replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g,'\\\\u');
+}
 function parseJSON(t){
-  t=String(t||'').trim();
+  t=perbaikiBackslash(String(t||'').trim());
   try{return JSON.parse(t)}catch(e){}
   const f=t.replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');
   try{return JSON.parse(f)}catch(e){}
@@ -575,8 +662,8 @@ function pesanGalat(st,txt,c){
   if(st===429)return 'Batas kuota AI tercapai. Tunggu beberapa menit, lalu lanjutkan.';
   return `Galat AI (${st}): ${m}`;
 }
-async function aiJSON(user,label){
-  const c=aiCfg();
+async function aiJSON(user,label,opt){
+  const c=aiCfg();if(opt&&opt.model)c.model=opt.model;
   if(!c.key){bukaPengaturan();throw new Error('API key belum diisi. Isi dulu di Pengaturan AI.')}
   let parseGagal=0;
   for(let attempt=0;attempt<5;attempt++){
@@ -623,11 +710,15 @@ function promptSoal(rows,catatan){
     SKT:`- SKT: {"id","stem","kunci":"jawaban 1–3 kata atau angka, pasti tunggal","pembahasan"}`,
     ESY:`- ESY: {"id","stem","kunci":"jawaban rujukan lengkap","pedoman":"pedoman penskoran per aspek dengan rincian skor","skor":skor maksimal (angka),"pembahasan"}`
   };
-  return `${idRingkas()}\n\nMateri acuan:\n"""\n${materiRingkas(30000)}\n"""\n\nTulis satu soal untuk setiap butir kisi-kisi berikut:\n${JSON.stringify(data,null,1)}\n\nSkema per bentuk:\n${tipeAda.map(t=>skema[t]).join('\n')}\n\nAturan:\n- Bahasa soal: ${bp.bahasa}.\n- Soal harus benar-benar mengukur indikator, materi, dan level yang diminta. Level C4 ke atas wajib memakai stimulus (kasus, data, tabel teks, potongan kode, atau ilustrasi kejadian).\n- Kunci jawaban harus benar. PG hanya punya satu opsi benar. Pengecoh masuk akal dan panjang opsi seimbang. Jangan memakai opsi "semua benar", "semua salah", atau yang merujuk opsi lain (misal "A dan B benar").\n- Tanpa gambar. Jika perlu kode program/pseudocode/tabel, tulis sebagai teks; kode program diletakkan di dalam blok \`\`\` dengan baris baru.\n- "pembahasan" 1–3 kalimat yang menjelaskan alasan jawaban benar.\n${catatan?'- Catatan guru untuk soal ini: '+catatan+'\n':''}\nFormat: {"soal":[ ... ]} — satu objek per butir, "id" sama persis dengan id butir.`;
+  return `${idRingkas()}\n\nMateri acuan:\n"""\n${materiRingkas(30000)}\n"""\n\nTulis satu soal untuk setiap butir kisi-kisi berikut:\n${JSON.stringify(data,null,1)}\n\nSkema per bentuk:\n${tipeAda.map(t=>skema[t]).join('\n')}\n\nAturan:\n- Bahasa soal: ${bp.bahasa}.\n- Soal harus benar-benar mengukur indikator, materi, dan level yang diminta. Level C4 ke atas wajib memakai stimulus (kasus, data, tabel teks, potongan kode, atau ilustrasi kejadian).\n- Kunci jawaban harus benar. PG hanya punya satu opsi benar. Pengecoh masuk akal dan panjang opsi seimbang. Jangan memakai opsi "semua benar", "semua salah", atau yang merujuk opsi lain (misal "A dan B benar").\n- Tanpa gambar. Jika perlu kode program/pseudocode/tabel, tulis sebagai teks; kode program diletakkan di dalam blok \`\`\` dengan baris baru.\n- "pembahasan" 1–3 kalimat yang menjelaskan alasan jawaban benar.\n${P.bp.rumus?ATURAN_RUMUS:''}${catatan?'- Catatan guru untuk soal ini: '+catatan+'\n':''}\nFormat: {"soal":[ ... ]} — satu objek per butir, "id" sama persis dengan id butir.`;
 }
+const ATURAN_RUMUS=`- RUMUS: tulis rumus sederhana dengan simbol Unicode (x², x³, √5, π, ≤, ≥, ≠, ±, ×, ÷, °, ½). Rumus yang tidak bisa ditulis rapi dengan Unicode (pecahan bertingkat, akar berisi pecahan/operasi, limit, integral, sigma, matriks, logaritma berbasis) tulis dalam LaTeX di antara satu tanda dolar, misalnya $\\dfrac{x^2-4}{x-2}$. Pakai \\dfrac untuk pecahan. Jangan memakai $$...$$, \\( \\) atau \\[ \\]. Jangan memakai tanda $ untuk keperluan lain (mata uang tulis "Rp").
+- Di dalam JSON, setiap backslash LaTeX WAJIB ditulis ganda, contoh: "$\\\\dfrac{1}{2}$".
+- Kunci SKT harus angka atau kata biasa (tanpa rumus dan tanpa tanda $), dengan satu bentuk penulisan yang pasti.
+`;
 function promptCek(list){
   const data=list.map(({row,s})=>({id:row.id,tipe:s.tipe,indikator:row.indikator,materi:row.materi,levelKisi:row.level,soal:ringkasSoal(s)}));
-  return `Periksa setiap soal terhadap butir kisi-kisinya.\nUntuk tiap soal tentukan:\n- "sesuai": true jika soal benar-benar mengukur indikator dan materi pada kisi-kisi.\n- "level": level kognitif yang SEBENARNYA diukur soal (C1–C6, Taksonomi Bloom revisi). Soal yang hanya menanyakan definisi/hafalan adalah C1.\n- "kunciBenar": true jika kunci jawaban benar (PG: tepat satu opsi benar).\n- "catatan": saran perbaikan singkat dalam bahasa Indonesia (kosongkan jika sudah baik).\n\nData:\n${JSON.stringify(data,null,1)}\n\nFormat: {"hasil":[{"id":"...","sesuai":true,"level":"C3","kunciBenar":true,"catatan":""}]}`;
+  return `Periksa setiap soal terhadap butir kisi-kisinya.\nUntuk tiap soal tentukan:\n- "sesuai": true jika soal benar-benar mengukur indikator dan materi pada kisi-kisi.\n- "level": level kognitif yang SEBENARNYA diukur soal (C1–C6, Taksonomi Bloom revisi). Soal yang hanya menanyakan definisi/hafalan adalah C1.\n- "kunciBenar": true jika kunci jawaban benar (PG: tepat satu opsi benar).\n- "catatan": saran perbaikan singkat dalam bahasa Indonesia (kosongkan jika sudah baik).\nUntuk soal hitungan, kerjakan ulang soalnya sendiri sebelum menilai kunci.\n\nData:\n${JSON.stringify(data,null,1)}\n\nFormat: {"hasil":[{"id":"...","sesuai":true,"level":"C3","kunciBenar":true,"catatan":""}]}`;
 }
 function ringkasSoal(s){
   const o={stem:s.stem};
@@ -691,6 +782,10 @@ function masalah(s,row){
   if(s.tipe==='URT'&&(s.urutan||[]).length<3)m.push(['b','Butir urutan kurang dari 3.']);
   if(s.tipe==='SKT'){if(!s.kunci)m.push(['b','Kunci kosong.']);else if(s.kunci.split(/\s+/).length>3)m.push(['w','Kunci isian singkat terlalu panjang; CBT menilai jawaban yang persis sama.'])}
   if(s.tipe==='ESY'&&!s.kunci)m.push(['b','Jawaban rujukan kosong.']);
+  if(P.bp.rumus){
+    if(teksSoal(s).some(x=>((x.match(/\$/g)||[]).length%2)))m.push(['b','Ada tanda $ rumus yang tidak berpasangan.']);
+    if(s.tipe==='SKT'&&/[$\\]/.test(s.kunci||''))m.push(['b','Kunci isian singkat tidak boleh berupa rumus; tulis angka/kata biasa.']);
+  }
   if(s.cek){
     if(s.cek.kunciBenar===false)m.push(['b','Cek AI: kunci jawaban diragukan.'+(s.cek.catatan?' '+s.cek.catatan:'')]);
     if(s.cek.sesuai===false)m.push(['b','Cek AI: soal kurang sesuai indikator.'+(s.cek.catatan&&s.cek.kunciBenar!==false?' '+s.cek.catatan:'')]);
@@ -712,6 +807,8 @@ function render(){
   $('#btnNext').disabled=step===5;
   badge();
   P.step=step;simpanNanti();
+  if(step===3||step===4)typeset($('#main'));
+  const ec=document.querySelector('.ef');if(ec)pratinjau(ec.closest('[data-soal]'));
 }
 function selesai(n){
   if(n===1)return !!(P.identitas.mapel&&P.identitas.kelas);
@@ -782,6 +879,7 @@ function v3(){
     <div><label>Level L1 C1–C2 (%)</label><input type="number" data-bind="bp.l1" value="${bp.l1}" inputmode="numeric"></div>
     <div><label>Level L2 C3 (%)</label><input type="number" data-bind="bp.l2" value="${bp.l2}" inputmode="numeric"></div>
     <div><label>Level L3 C4–C6 (%)</label><input type="number" data-bind="bp.l3" value="${bp.l3}" inputmode="numeric"></div>
+    <div class="full"><label style="display:flex;align-items:flex-start;gap:4px;color:var(--ink);font-size:14px"><input type="checkbox" data-bind="bp.rumus" ${bp.rumus?'checked':''} style="margin-top:4px"><span><b>Mapel berumus</b> (matematika, fisika, kimia). Rumus sederhana memakai simbol, rumus rumit ditulis LaTeX dan diekspor sebagai gambar di file CBT.</span></label></div>
     ${fld('bp.catatan','Catatan untuk AI (opsional)','Contoh: pakai konteks kehidupan sehari-hari; kode dalam Python',{area:true,rows:2,full:true})}
    </div>
    <div id="lvWarn" class="note warn ${num(bp.l1)+num(bp.l2)+num(bp.l3)===100?'hidden':''}">Jumlah persentase level belum 100%.</div>
@@ -843,7 +941,9 @@ function viewSoal(s){
   return h;
 }
 function formEdit(s){
-  let h=`<div class="ef"><div><label>Rumusan soal (kode program diapit \`\`\`)</label><textarea data-f="stem" rows="5">${esc(s.stem)}</textarea></div>`;
+  let h=`<div class="ef">`;
+  if(P.bp.rumus)h+=`<div><label>Sisipkan simbol/rumus ke kolom yang sedang aktif</label><div class="symbar">${SIMBOL.map((x,i)=>`<button type="button" data-act="sym" data-i="${i}">${esc(x[0])}</button>`).join('')}</div></div>`;
+  h+=`<div><label class="mathjax_ignore">Rumusan soal ${P.bp.rumus?'(rumus LaTeX diapit tanda $ … $)':'(kode program diapit \`\`\`)'}</label><textarea data-f="stem" rows="5">${esc(s.stem)}</textarea></div>`;
   const ks=(s.kunci||'').split(',');
   if(s.tipe==='PG'||s.tipe==='PGX'){
     h+=`<div><label>Opsi — ${s.tipe==='PG'?'pilih satu kunci':'centang semua kunci'}</label>${(s.opsi||[]).map((o,i)=>`<div class="oprow"><input type="${s.tipe==='PG'?'radio':'checkbox'}" name="k_${s.id}" value="${LET[i]}" ${ks.includes(LET[i])?'checked':''} data-f="kunciPick"><b>${LET[i]}</b><input data-f="opsi" value="${esc(o)}"></div>`).join('')}</div>`;
@@ -861,6 +961,7 @@ function formEdit(s){
   }
   h+=`<div class="row"><div style="width:120px"><label>Skor</label><input type="number" data-f="skor" value="${esc(s.skor)}" inputmode="decimal"></div></div>
    <div><label>Pembahasan</label><textarea data-f="pembahasan" rows="3">${esc(s.pembahasan)}</textarea></div>
+   ${P.bp.rumus?'<div><label>Pratinjau</label><div class="pv"></div></div>':''}
    <div class="row end"><button data-act="soalBatal">Batal</button><button class="pri" data-act="soalSimpan">Simpan</button></div></div>`;
   return h;
 }
@@ -893,6 +994,7 @@ function bukaPengaturan(){
    <div class="fld"><label>Penyedia</label><div class="seg"><button data-act="prov" data-p="gemini" class="${c.provider==='gemini'?'on':''}">Google Gemini</button><button data-act="prov" data-p="openrouter" class="${c.provider==='openrouter'?'on':''}">OpenRouter</button></div></div>
    <div class="fld"><label>API key</label><div class="row"><input id="aiKey" type="password" class="sp" value="${esc(c.key)}" placeholder="${c.provider==='gemini'?'AIza...':'sk-or-...'}" autocomplete="off" style="width:auto"><button class="sm" data-act="lihatKey">👁</button></div></div>
    <div class="fld"><label>Model</label><div class="row"><input id="aiModel" class="sp" list="dlModel" value="${esc(c.model)}" style="width:auto"><button class="sm" data-act="muatModel">Muat daftar model</button></div><datalist id="dlModel">${modelList.map(m=>`<option value="${esc(m)}">`).join('')}</datalist></div>
+   <div class="fld"><label>Model untuk Cek keselarasan (opsional; kosong = sama dengan model di atas)</label><input id="aiCekModel" list="dlModel" value="${esc(c.cekModel||'')}" placeholder="misal model yang lebih kuat bernalar"></div>
    <div class="grid"><div class="fld"><label>Soal per permintaan</label><input id="aiBatch" type="number" min="1" max="10" value="${c.batch}"></div><div class="fld"><label>Jeda antarpermintaan (detik)</label><input id="aiJeda" type="number" min="0" max="60" value="${c.jeda}"></div></div>
    <label style="display:flex;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" id="aiSimpan" ${c.simpan!==false?'checked':''}>Simpan key di perangkat ini (hapus centang untuk perangkat bersama)</label>
    <div id="aiStatus" class="note hidden"></div>
@@ -901,7 +1003,7 @@ function bukaPengaturan(){
    <div class="small muted" style="margin:8px 0">Key hanya disimpan di browser ini dan dikirim langsung ke ${c.provider==='gemini'?'Google':'OpenRouter'}; tidak ikut ke file proyek.</div>
    <div class="row"><button class="ghost danger" data-act="hapusKey">Hapus key</button><span class="sp"></span><button data-act="tesAI">Tes koneksi</button><button class="pri" data-act="simpanAI">Simpan</button></div>`);
 }
-function bacaForm(){const c=aiCfg();c.key=$('#aiKey').value.trim();c.model=$('#aiModel').value.trim()||c.model;c.batch=Math.min(10,Math.max(1,parseInt($('#aiBatch').value)||5));c.jeda=Math.max(0,parseFloat($('#aiJeda').value)||0);c.simpan=$('#aiSimpan').checked;return c}
+function bacaForm(){const c=aiCfg();c.key=$('#aiKey').value.trim();c.model=$('#aiModel').value.trim()||c.model;c.batch=Math.min(10,Math.max(1,parseInt($('#aiBatch').value)||5));c.jeda=Math.max(0,parseFloat($('#aiJeda').value)||0);c.simpan=$('#aiSimpan').checked;c.cekModel=$('#aiCekModel').value.trim();return c}
 function aiStatus(t,cls){const e=$('#aiStatus');if(!e)return;e.className='note '+(cls||'');e.textContent=t}
 
 /* ---------- aksi ---------- */
@@ -996,7 +1098,7 @@ async function cekSemua(){
     for(let i=0;i<list.length;i+=8){
       const part=list.slice(i,i+8);
       $('#busyProg').textContent=`${done}/${list.length} soal diperiksa`;
-      const out=await aiJSON(promptCek(part),'Cek keselarasan');
+      const out=await aiJSON(promptCek(part),'Cek keselarasan',{model:c.cekModel});
       arr(out&&out.hasil||out).forEach(h=>{const x=part.find(p=>p.row.id===String(h.id));if(x){x.s.cek={sesuai:h.sesuai!==false,level:h.level?normLevel(h.level):'',kunciBenar:h.kunciBenar!==false,catatan:str(h.catatan)};done++}});
       simpan();
       if(i+8<list.length&&c.jeda>0)await tunggu(c.jeda*1000,'Jeda {s} detik…');
@@ -1053,7 +1155,7 @@ document.addEventListener('click',async e=>{
     case 'openFile':$('#fProj').click();break;
     case 'help':bantuan();break;
     case 'openSettings':bukaPengaturan();break;
-    case 'prov':{const c=bacaForm();c.provider=b.dataset.p;c.model=c.provider==='gemini'?'gemini-2.5-flash':'google/gemini-2.5-flash';modelList=[];aiSave(c);bukaPengaturan();badge();break}
+    case 'prov':{const c=bacaForm();c.provider=b.dataset.p;c.model=c.provider==='gemini'?'gemini-2.5-flash':'google/gemini-2.5-flash';c.cekModel='';modelList=[];aiSave(c);bukaPengaturan();badge();break}
     case 'lihatKey':{const k=$('#aiKey');k.type=k.type==='password'?'text':'password';break}
     case 'muatModel':{const c=bacaForm();aiStatus('Memuat daftar model…');
       try{
@@ -1087,7 +1189,15 @@ document.addEventListener('click',async e=>{
     case 'soalRegen':regenModal(sid);break;
     case 'regenGo':{const id=b.dataset.id;const note=$('#regenNote').value.trim();tutupModal();genSoal(P.kisi.filter(r=>r.id===id),note);break}
     case 'pakaiLevel':{const row=P.kisi.find(r=>r.id===sid),s=P.soal[sid];if(row&&s&&s.cek){row.level=s.cek.level;simpan();render()}break}
-    case 'exp':{busy(true,'Membuat dokumen…');try{await siapDocx();const {blob,name}=await window.GAS_EXPORT.make(b.dataset.kind,P);unduh(blob,name);toast('Dokumen diunduh: '+name)}catch(err){pesan('Gagal membuat dokumen',esc(err.message))}finally{busy(false)}break}
+    case 'exp':{busy(true,'Membuat dokumen…');let gagal=[];
+      try{await siapDocx();const Rm=await siapRumus();gagal=Rm.gagal;$('#busyProg').textContent='';const {blob,name}=await window.GAS_EXPORT.make(b.dataset.kind,P,Rm);unduh(blob,name);toast('Dokumen diunduh: '+name)}
+      catch(err){pesan('Gagal membuat dokumen',esc(err.message))}finally{busy(false)}
+      if(gagal.length)pesan('Ada rumus yang gagal diubah',`Rumus berikut tidak valid sehingga ditulis apa adanya di dokumen. Perbaiki di langkah 4 lalu unduh ulang:<ul>${gagal.map(t=>`<li><code>${esc(t)}</code></li>`).join('')}</ul>`);
+      break}
+    case 'sym':{const card=b.closest('.ef');const el=(lastField&&card.contains(lastField))?lastField:card.querySelector('[data-f="stem"]');
+      const ins=SIMBOL[+b.dataset.i][1];const a0=el.selectionStart==null?el.value.length:el.selectionStart,a1=el.selectionEnd==null?a0:el.selectionEnd;
+      el.value=el.value.slice(0,a0)+ins+el.value.slice(a1);el.focus();try{el.setSelectionRange(a0+ins.length,a0+ins.length)}catch(_){}
+      el.dispatchEvent(new Event('input',{bubbles:true}));break}
   }
 });
 const main=$('#main');
@@ -1097,6 +1207,8 @@ main.addEventListener('input',e=>{
     const ks=t.dataset.bind.split('.');let o=P;for(let i=0;i<ks.length-1;i++)o=o[ks[i]];
     o[ks[ks.length-1]]=t.type==='checkbox'?t.checked:(t.type==='number'?num(t.value):t.value);
     simpanNanti();
+    if(t.dataset.bind==='bp.rumus'){P.bp.rumusManual=true;render();return}
+    if(t.dataset.bind==='identitas.mapel'&&!P.bp.rumusManual)P.bp.rumus=/matemat|fisika|kimia/i.test(t.value);
     if(t.dataset.bind==='materi')$('#cntMateri').textContent=P.materi.length.toLocaleString('id-ID')+' huruf';
     if(/^bp\.(PG|PGX|BNR|JD|JDX|URT|SKT|ESY)$/.test(t.dataset.bind)){const n=Object.values(hitung()).reduce((a,b)=>a+b,0);$('#totSoal').textContent=`Total: ${n} soal`}
     if(/^bp\.l[123]$/.test(t.dataset.bind))$('#lvWarn').classList.toggle('hidden',num(P.bp.l1)+num(P.bp.l2)+num(P.bp.l3)===100);
@@ -1108,6 +1220,7 @@ main.addEventListener('input',e=>{
     if(t.dataset.k==='kode')P.kisi.forEach(r=>{if(r.cp===old)r.cp=t.value});
     simpanNanti();return;
   }
+  if(t.closest('.ef')){clearTimeout(pvT);const card=t.closest('[data-soal]');pvT=setTimeout(()=>pratinjau(card),350);return}
   const kr=t.closest('[data-kisi]');
   if(kr&&t.dataset.k){
     const row=P.kisi.find(r=>r.id===kr.dataset.kisi);if(!row)return;
@@ -1125,6 +1238,8 @@ $('#fProj').addEventListener('change',async e=>{
     P=lengkapi(p);step=P.step||1;editId=null;simpan();render();toast('Proyek dibuka.')}
   catch(err){pesan('Gagal membuka file',esc(err.message))}
 });
+document.addEventListener('focusin',e=>{const t=e.target;if(t.closest&&t.closest('.ef')&&(t.tagName==='TEXTAREA'||(t.tagName==='INPUT'&&!/radio|checkbox|number/.test(t.type))))lastField=t});
+document.addEventListener('mousedown',e=>{if(e.target.closest('.symbar'))e.preventDefault()});
 window.addEventListener('beforeunload',simpan);
 render();
 if(!aiCfg().key)setTimeout(()=>toast('Isi API key di ⚙️ Pengaturan AI sebelum memakai fitur AI.'),600);
