@@ -117,6 +117,16 @@ details ol{padding-left:20px;margin:8px 0}
 .cnt{font-size:12px;color:var(--muted);text-align:right;margin-top:2px}
 .symbar{display:flex;flex-wrap:wrap;gap:4px;padding:6px;background:#f2f4f7;border-radius:10px}
 .symbar button{padding:4px 8px;font-size:14px;font-weight:500;border-radius:7px;min-width:34px}
+.gimg{max-width:100%;max-height:320px;display:block;margin:6px 0;border-radius:6px;border:1px solid var(--line)}
+.ph{display:inline-block;background:var(--warnbg);color:#7a4605;border-radius:8px;padding:4px 8px;font-size:13px;margin:4px 0}
+table.tb{border-collapse:collapse;margin:6px 0;font-size:14px;max-width:100%;display:block;overflow-x:auto}
+table.tb td,table.tb th{border:1px solid #98a2b3;padding:4px 8px;text-align:left;vertical-align:top}
+table.tb th{background:#eef1f5}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap}
+.thumbs button{padding:3px;border-radius:8px;position:relative}
+.thumbs img{height:54px;max-width:90px;display:block;border-radius:5px}
+.thumbs span{position:absolute;left:3px;bottom:3px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:0 4px;border-radius:4px}
+.genprev img{max-width:100%;border-radius:10px;border:1px solid var(--line);margin:8px 0}
 .pv{border:1px dashed var(--line);border-radius:10px;padding:8px 10px;background:#fcfcfd;font-size:14px}
 .pv:empty::before{content:'Pratinjau muncul di sini';color:var(--muted)}
 mjx-container{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden;vertical-align:middle}
@@ -148,6 +158,7 @@ mjx-container{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hid
 <div id="modal" class="modal hidden"><div class="mbox" id="mbox"></div></div>
 <div id="toast"></div>
 <input type="file" id="fProj" accept=".json,application/json" hidden>
+<input type="file" id="fGambar" accept="image/*" hidden>
 <input type="file" id="fMateri" accept=".pdf,.txt,application/pdf,text/plain" multiple hidden>
 
 <!-- ================= PEMBUAT DOKUMEN .DOCX ================= -->
@@ -197,10 +208,26 @@ function bentukRingkas(P){
 function cpTeks(P,kode){const c=(P.cp||[]).find(x=>String(x.kode)===String(kode));return c?c.teks:String(kode||'')}
 function aman(s){return String(s||'').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'_').slice(0,60)||'dokumen'}
 
-window.GASH={LET,NAMA_BENTUK,BAGIAN,acakJD,acakURT,kunciTeks,shuffleSeed,hash};
+// ---- tabel gaya markdown (| a | b |) ----
+const isTbl=l=>/^\s*\|.*\|\s*$/.test(l);
+const isSep=l=>/^\s*\|(\s*:?-{2,}:?\s*\|)+\s*$/.test(l);
+function parseTabel(blk){
+  const lines=blk.filter(l=>l.trim());
+  const header=lines.length>1&&isSep(lines[1]);
+  const rows=lines.filter(l=>!isSep(l)).map(l=>l.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim()));
+  const n=Math.max(1,...rows.map(r=>r.length));rows.forEach(r=>{while(r.length<n)r.push('')});
+  return {rows,header,n};
+}
+function potong(seg){
+  const out=[];const L=seg.split('\n');let i=0;
+  while(i<L.length){if(isTbl(L[i])){let j=i;while(j<L.length&&isTbl(L[j]))j++;out.push({tabel:L.slice(i,j)});i=j}else{out.push({teks:L[i]});i++}}
+  return out;
+}
+function bagianTeks(text){return String(text||'').split(/```[a-zA-Z0-9]*\n?/).map((seg,i)=>({code:i%2===1,seg:seg.replace(/^\n+|\n+$/g,'')}))}
+window.GASH={LET,NAMA_BENTUK,BAGIAN,acakJD,acakURT,kunciTeks,shuffleSeed,hash,isTbl,parseTabel,potong,bagianTeks};
 
 function make(kind,P,R){
-  R=R||{on:false,map:{}};
+  R=Object.assign({on:false,map:{},img:{},tabelGambar:false,tabelImg:{}},R||{});
   const D=window.docx;
   if(!D) throw new Error('Pustaka dokumen belum termuat.');
   const {Document,Packer,Paragraph,TextRun,ImageRun,Table,TableRow,TableCell,WidthType,AlignmentType,BorderStyle,VerticalMergeType,ShadingType,PageOrientation,TableLayoutType,VerticalAlign}=D;
@@ -218,12 +245,13 @@ function make(kind,P,R){
   // satu baris teks -> TextRun + ImageRun (rumus $...$ menjadi gambar inline)
   function runs(line,o){
     const tr=t=>new TextRun({text:t,bold:o.bold,italics:o.italic,size:o.size,font:o.font});
-    if(!R.on||line.indexOf('$')<0) return [tr(line)];
-    const out=[];const re=/\$([^$\n]+?)\$/g;let m,last=0;
+    const adaRumus=R.on&&line.indexOf('$')>=0,adaGbr=line.indexOf('[gbr:')>=0;
+    if(!adaRumus&&!adaGbr) return [tr(line)];
+    const out=[];const re=R.on?/\$([^$\n]+?)\$|\[gbr:([a-z0-9]+)\]/g:/()\[gbr:([a-z0-9]+)\]/g;let m,last=0;
     while((m=re.exec(line))){
       if(m.index>last) out.push(tr(line.slice(last,m.index)));
-      const im=R.map[m[1].trim()];
-      out.push(im?new ImageRun({data:im.data,transformation:{width:im.w,height:im.h}}):tr(m[0]));
+      const im=m[2]!=null?R.img[m[2]]:R.map[String(m[1]).trim()];
+      out.push(im?new ImageRun({data:im.data,transformation:{width:im.w,height:im.h}}):tr(m[2]!=null?'[gambar hilang]':m[0]));
       last=re.lastIndex;
     }
     if(last<line.length) out.push(tr(line.slice(last)));
@@ -235,14 +263,30 @@ function make(kind,P,R){
     return new Paragraph({alignment:o.align,spacing:{after:o.after==null?0:o.after,before:o.before||0},indent:o.indent,keepNext:o.keepNext,children:ch});
   }
   // teks dengan blok kode ```...``` -> paragraf (kode memakai Courier New)
+  function tabelBlok(blk,o){
+    if(R.tabelGambar){
+      const im=R.tabelImg[blk.join('\n')];
+      if(im) return [new Paragraph({indent:o.indent,children:[new ImageRun({data:im.data,transformation:{width:im.w,height:im.h}})]})];
+    }
+    const t=parseTabel(blk);const W=Math.max(2000,o.tw||6000);const ws=scale(Array(t.n).fill(1),W);const sz=o.size?o.size-2:22;
+    return [new Table({columnWidths:ws,width:{size:W,type:WidthType.DXA},layout:TableLayoutType.FIXED,indent:o.indent&&o.indent.left?{size:o.indent.left,type:WidthType.DXA}:undefined,
+      rows:t.rows.map((r,ri)=>new TableRow({tableHeader:t.header&&ri===0,children:r.map((c,ci)=>new TableCell({width:{size:ws[ci],type:WidthType.DXA},margins:{top:30,bottom:30,left:70,right:70},
+        shading:t.header&&ri===0?{fill:'EEEEEE',type:ShadingType.CLEAR,color:'auto'}:undefined,children:[para(c,{size:sz,bold:t.header&&ri===0})]}))}))}),
+      new Paragraph({spacing:{after:0},children:[]})];
+  }
   function rich(text,o={}){
-    const out=[];const parts=String(text||'').split(/```[a-zA-Z0-9]*\n?/);
-    parts.forEach((seg,i)=>{
-      const code=i%2===1;
-      seg=seg.replace(/^\n+|\n+$/g,'');
+    const out=[];
+    bagianTeks(text).forEach(({code,seg})=>{
       if(!seg) return;
-      seg.split('\n').forEach((line,j)=>{
-        const pre=(j===0&&out.length===0&&o.prefix)?o.prefix:'';
+      const items=code?seg.split('\n').map(t=>({teks:t})):potong(seg);
+      items.forEach((it,j)=>{
+        if(it.tabel){
+          if(out.length===0&&o.prefix)out.push(new Paragraph({indent:o.indentFirst||o.indent,children:[new TextRun({text:o.prefix,size:o.size,bold:o.bold})]}));
+          out.push(...tabelBlok(it.tabel,o));return;
+        }
+        const line=it.teks;
+        let pre=(out.length===0&&o.prefix)?o.prefix:'';
+        if(pre&&!code&&/^\s*\[gbr:/.test(line)){out.push(new Paragraph({indent:o.indentFirst||o.indent,keepNext:true,children:[new TextRun({text:pre,size:o.size,bold:o.bold})]}));pre=''}
         out.push(new Paragraph({indent:(out.length===0?o.indentFirst:null)||o.indent,spacing:{after:0},keepNext:o.keepNext,
           children:code?[new TextRun({text:pre+(line||''),font:'Courier New',size:o.size?o.size-2:22,bold:o.bold})]:(pre?[new TextRun({text:pre,size:o.size,bold:o.bold})]:[]).concat(runs(line||'',{size:o.size,bold:o.bold}))}));
       });
@@ -252,6 +296,7 @@ function make(kind,P,R){
   }
   function cell(children,w,o={}){
     const ch=(Array.isArray(children)?children:[children]).map(c=>typeof c==='string'?para(c,{size:o.size}):c);
+    if(ch.length&&!(ch[ch.length-1] instanceof Paragraph))ch.push(new Paragraph({children:[]}));
     return new TableCell({children:ch.length?ch:[para('')],width:{size:w,type:WidthType.DXA},columnSpan:o.span,verticalMerge:o.vm,
       shading:o.shade?{fill:o.shade,type:ShadingType.CLEAR,color:'auto'}:undefined,verticalAlign:o.va,
       margins:{top:50,bottom:50,left:90,right:90}});
@@ -281,10 +326,11 @@ function make(kind,P,R){
   // ---------- isi soal (naskah & kartu) ----------
   function isiSoal(it,o){
     const s=it.s,out=[];const sz=o.size;const L=o.left||0;
-    out.push(...rich(s.stem,{size:sz,prefix:o.nomor?`${it.no}. `:'',indentFirst:o.nomor?{left:L+400,hanging:400}:undefined,indent:{left:L+(o.nomor?400:0)}}));
+    const TW=(o.width||8000)-L-(o.nomor?400:0)-200;
+    out.push(...rich(s.stem,{size:sz,tw:TW,prefix:o.nomor?`${it.no}. `:'',indentFirst:o.nomor?{left:L+400,hanging:400}:undefined,indent:{left:L+(o.nomor?400:0)}}));
     const ind={left:L+(o.nomor?800:400),hanging:400};
     if(s.tipe==='PG'||s.tipe==='PGX'){
-      (s.opsi||[]).forEach((t,i)=>out.push(...rich(t,{size:sz,prefix:`${LET[i]}. `,indentFirst:ind,indent:{left:ind.left}})));
+      (s.opsi||[]).forEach((t,i)=>out.push(...rich(t,{size:sz,tw:TW-400,prefix:`${LET[i]}. `,indentFirst:ind,indent:{left:ind.left}})));
     }else if(s.tipe==='BNR'){
       if(o.tabel){
         const W=o.width-L-(o.nomor?400:0);const ws=scale([600,W-1600,500,500],W);
@@ -435,7 +481,7 @@ function make(kind,P,R){
     const ws=scale([1100,8500],usable);
     const ch=[];
     const absAuto={PG:!!(P.ekspor&&P.ekspor.absPG),PGX:true,BNR:true,JD:true,JDX:true,URT:true,SKT:false,ESY:false};
-    const txt=t=>rich(t,{});
+    const txt=t=>rich(t,{tw:ws[1]-200});
     items.forEach(it=>{
       const s=it.s;if(!s) return;
       const r=it.row;let kj='';const extra=[];
@@ -498,6 +544,7 @@ const TIPE={
 const LEVELS=['C1','C2','C3','C4','C5','C6'];
 const STEPS=['Identitas','Materi & CP','Kisi-kisi','Soal','Ekspor'];
 const URL_DOCX=['https://unpkg.com/docx@8.5.0/build/index.umd.js','https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js'];
+const IMG_MAX=960,IMG_CBT=480,IMG_WORD=420;
 const URL_MJ=['https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js','https://unpkg.com/mathjax@3.2.2/es5/tex-svg.js'];
 const URL_PDF=['https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js','https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'];
 
@@ -509,10 +556,10 @@ function proyekBaru(prev){
     identitas:{sekolah:i.sekolah||'',asesmen:'Asesmen Sumatif Akhir Semester (ASAS)',tahun:tahunAjar(),jenjang:i.jenjang||'SMA',mapel:'',kelas:'',semester:'',kurikulum:'Kurikulum Merdeka',waktu:'90 menit',buku:'',penulis:i.penulis||'',nipPenulis:i.nipPenulis||'',kepsek:i.kepsek||'',nipKepsek:i.nipKepsek||'',kota:i.kota||'',tanggal:''},
     materi:'',sumber:[],cp:[{kode:'1',teks:''}],topik:'',
     bp:{PG:20,PGX:0,BNR:0,JD:0,JDX:0,URT:0,SKT:0,ESY:5,opsi:5,l1:30,l2:50,l3:20,bahasa:'Indonesia',catatan:'',rumus:false,rumusManual:false},
-    kisi:[],soal:{},ekspor:{kertas:'A4',absPG:false}};
+    kisi:[],soal:{},gambar:{},ekspor:{kertas:'A4',absPG:false}};
 }
 function muatProyek(){try{const p=JSON.parse(localStorage.getItem(LS_P)||'null');if(p&&p.versi)return lengkapi(p)}catch(e){}return null}
-function lengkapi(p){const b=proyekBaru();for(const k of Object.keys(b)){if(p[k]==null)p[k]=b[k]}for(const k of ['identitas','bp','ekspor']){p[k]=Object.assign({},b[k],p[k])}if(!Array.isArray(p.cp)||!p.cp.length)p.cp=[{kode:'1',teks:''}];return p}
+function lengkapi(p){const b=proyekBaru();for(const k of Object.keys(b)){if(p[k]==null)p[k]=b[k]}for(const k of ['identitas','bp','ekspor']){p[k]=Object.assign({},b[k],p[k])}if(!Array.isArray(p.cp)||!p.cp.length)p.cp=[{kode:'1',teks:''}];if(!p.gambar||typeof p.gambar!=='object')p.gambar={};return p}
 let P=muatProyek()||proyekBaru();
 let simpanT=null;
 function simpan(){try{localStorage.setItem(LS_P,JSON.stringify(P))}catch(e){toast('Gagal menyimpan otomatis (penyimpanan browser penuh). Simpan ke file .json.')}}
@@ -605,10 +652,206 @@ function pratinjau(card){
   ['bnr','jd','pengecoh','urt','kunci','pedoman'].forEach(f=>{if(g(f)&&g(f).value.trim())h+=`<div class="small" style="margin-top:6px">${fmt(g(f).value)}</div>`});
   pv.innerHTML=h;typeset(pv);
 }
+/* ---------- gambar: IndexedDB + cache ---------- */
+const GBR=new Map();
+const IDB={db:null,
+  open(){if(this.db)return Promise.resolve(this.db);return new Promise((res,rej)=>{const r=indexedDB.open('gas_db',1);r.onupgradeneeded=()=>r.result.createObjectStore('gambar');r.onsuccess=()=>{this.db=r.result;res(r.result)};r.onerror=()=>rej(r.error)})},
+  async tx(mode,fn){const db=await this.open();return new Promise((res,rej)=>{const t=db.transaction('gambar',mode);const rq=fn(t.objectStore('gambar'));t.oncomplete=()=>res(rq&&rq.result);t.onerror=()=>rej(t.error)})},
+  put(id,v){return this.tx('readwrite',st=>st.put(v,id))},
+  get(id){return this.tx('readonly',st=>st.get(id))},
+  clear(){return this.tx('readwrite',st=>st.clear())}
+};
+async function muatGambar(){
+  let n=0;
+  for(const id of Object.keys(P.gambar||{})){
+    if(GBR.has(id))continue;
+    try{const v=await IDB.get(id);if(v&&v.buf){const blob=new Blob([v.buf],{type:v.type||'image/png'});GBR.set(id,{blob,url:URL.createObjectURL(blob),w:v.w,h:v.h});n++}}catch(e){}
+  }
+  return n;
+}
+function bersihkanGambar(){GBR.forEach(g=>URL.revokeObjectURL(g.url));GBR.clear();cbtCache.clear()}
+async function gambarKeCanvas(blob,max){
+  const url=URL.createObjectURL(blob);
+  try{
+    const img=new Image();img.src=url;await img.decode();
+    const k=Math.min(1,max/Math.max(img.naturalWidth,1));
+    const w=Math.max(1,Math.round(img.naturalWidth*k)),h=Math.max(1,Math.round(img.naturalHeight*k));
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;const g=cv.getContext('2d');
+    g.fillStyle='#fff';g.fillRect(0,0,w,h);g.imageSmoothingQuality='high';g.drawImage(img,0,0,w,h);return cv;
+  }finally{URL.revokeObjectURL(url)}
+}
+const kePng=cv=>new Promise(r=>cv.toBlob(r,'image/png'));
+// simpan gambar baru (diperkecil, PNG) -> id
+async function simpanGambar(blob,meta){
+  const cv=await gambarKeCanvas(blob,IMG_MAX);const png=await kePng(cv);
+  const id='g'+uid();
+  await IDB.put(id,{buf:await png.arrayBuffer(),type:'image/png',w:cv.width,h:cv.height});
+  GBR.set(id,{blob:png,url:URL.createObjectURL(png),w:cv.width,h:cv.height});
+  P.gambar[id]=Object.assign({w:cv.width,h:cv.height,dibuat:new Date().toISOString()},meta||{});simpan();
+  return id;
+}
+const RE_GBR=/\[gbr:([a-z0-9]+)\]/g,RE_PH=/\[GAMBAR:\s*([^\]]*)\]/i;
+function adaIlustrasiAI(s){return teksSoal(s).some(x=>{const re=/\[gbr:([a-z0-9]+)\]/g;let m;while((m=re.exec(x)))if((P.gambar[m[1]]||{}).sumber==='ai')return true;return false})}
+function pasangGambar(s,id){
+  const tag=`[gbr:${id}]`;
+  if(RE_PH.test(s.stem))s.stem=s.stem.replace(RE_PH,tag);
+  else s.stem=tag+'\n'+s.stem;
+  s.cek=null;
+}
+// tabel -> gambar (untuk CBT); digambar langsung di canvas agar andal di Safari
+const tabelCache=new Map();
+function tabelPng(blk){
+  const key=blk.join('\n');if(tabelCache.has(key))return tabelCache.get(key);
+  const t=window.GASH.parseTabel(blk);const F=15,PX=8,PY=6,LH=20,MAXW=620,MAXC=280;
+  const cv=document.createElement('canvas');const g=cv.getContext('2d');
+  const font=b=>`${b?'bold ':''}${F}px Arial, Helvetica, sans-serif`;
+  const tebal=ri=>t.header&&ri===0;
+  const ws=Array(t.n).fill(36);
+  t.rows.forEach((r,ri)=>r.forEach((c,ci)=>{g.font=font(tebal(ri));ws[ci]=Math.max(ws[ci],Math.min(MAXC,Math.ceil(g.measureText(c).width)+2*PX))}));
+  const tot=ws.reduce((a,b)=>a+b,0);if(tot>MAXW){const k=MAXW/tot;ws.forEach((w,i)=>ws[i]=Math.max(48,Math.floor(w*k)))}
+  const bungkus=(txt,w)=>{const out=[];let cur='';String(txt).split(/\s+/).forEach(wd=>{const c2=cur?cur+' '+wd:wd;if(!cur||g.measureText(c2).width<=w-2*PX)cur=c2;else{out.push(cur);cur=wd}});out.push(cur);return out};
+  const sel=t.rows.map((r,ri)=>r.map((c,ci)=>{g.font=font(tebal(ri));return bungkus(c,ws[ci])}));
+  const hs=sel.map(r=>Math.max(...r.map(x=>x.length))*LH+2*PY);
+  const W=ws.reduce((a,b)=>a+b,0)+1,H=hs.reduce((a,b)=>a+b,0)+1;
+  cv.width=W;cv.height=H;g.fillStyle='#fff';g.fillRect(0,0,W,H);
+  let y=0.5;
+  sel.forEach((r,ri)=>{
+    let x=0.5;
+    if(tebal(ri)){g.fillStyle='#eef1f5';g.fillRect(0,y,W,hs[ri])}
+    r.forEach((lines,ci)=>{
+      g.font=font(tebal(ri));g.fillStyle='#000';g.textBaseline='top';
+      lines.forEach((ln,k)=>g.fillText(ln,x+PX,y+PY+k*LH+2));
+      g.strokeStyle='#555';g.lineWidth=1;g.strokeRect(x,y,ws[ci],hs[ri]);x+=ws[ci];
+    });
+    y+=hs[ri];
+  });
+  const p=kePng(cv).then(async b=>({data:new Uint8Array(await b.arrayBuffer()),w:W,h:H}));
+  tabelCache.set(key,p);return p;
+}
+function teksSemua(){const a=[];Object.values(P.soal).forEach(s=>{if(s)a.push(...teksSoal(s))});P.kisi.forEach(r=>a.push(r.indikator||''));return a}
+const cbtCache=new Map();
+async function siapGambar(kind){
+  const img={},tabelImg={},hilang=new Set(),ids=new Set();
+  teksSemua().forEach(t=>{const re=/\[gbr:([a-z0-9]+)\]/g;let m;while((m=re.exec(t)))ids.add(m[1])});
+  await muatGambar();
+  for(const id of ids){
+    const g=GBR.get(id);if(!g){hilang.add(id);continue}
+    if(kind==='cbt'){
+      if(!cbtCache.has(id)){const cv=await gambarKeCanvas(g.blob,IMG_CBT);const b=await kePng(cv);cbtCache.set(id,{data:new Uint8Array(await b.arrayBuffer()),w:cv.width,h:cv.height})}
+      img[id]=cbtCache.get(id);
+    }else{
+      const k=Math.min(1,IMG_WORD/g.w);
+      img[id]={data:new Uint8Array(await g.blob.arrayBuffer()),w:Math.round(g.w*k),h:Math.round(g.h*k)};
+    }
+  }
+  if(kind==='cbt'){
+    teksSemua().forEach(t=>window.GASH.bagianTeks(t).forEach(({code,seg})=>{if(!code)window.GASH.potong(seg).forEach(it=>{if(it.tabel)tabelImg[it.tabel.join('\n')]=null})}));
+    for(const k of Object.keys(tabelImg))tabelImg[k]=await tabelPng(k.split('\n'));
+  }
+  return {img,tabelImg,tabelGambar:kind==='cbt',hilang:[...hilang]};
+}
+// base64 untuk file proyek
+function bufKeB64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
+function b64KeBuf(b){const s=atob(b);const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u.buffer}
+
+/* ---------- ilustrasi AI ---------- */
+function modelGambarDefault(p){return p==='gemini'?'gemini-2.5-flash-image':'google/gemini-2.5-flash-image'}
+async function aiGambar(desk){
+  const c=aiCfg();
+  if(!c.key){bukaPengaturan();throw new Error('API key belum diisi.')}
+  const model=(c.imgModel||modelGambarDefault(c.provider)).replace(/^models\//,'');
+  const prompt=`Buat SATU gambar ilustrasi untuk soal ujian sekolah (SMA, Indonesia).\nIsi gambar: ${desk}\nGaya: ilustrasi sederhana dan jelas seperti di buku pelajaran, latar putih atau polos, warna lembut, proporsi wajar, rasio sekitar 4:3.\nPENTING: jangan ada tulisan, huruf, angka, label, atau watermark apa pun di dalam gambar.`;
+  for(let attempt=0;attempt<3;attempt++){
+    if(STOP)throw new Error('Dihentikan.');
+    let res;
+    try{
+      res=c.provider==='gemini'
+        ?await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':c.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseModalities:['IMAGE','TEXT']}})})
+        :await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.key,'X-Title':'Generator Asesmen Sumatif'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],modalities:['image','text']})});
+    }catch(e){throw new Error('Tidak bisa terhubung ke layanan AI. Periksa koneksi internet.')}
+    if([429,500,502,503,504].includes(res.status)&&attempt<2){await tunggu([20000,45000][attempt],'Server sibuk/kena batas, mencoba lagi dalam {s} detik…');continue}
+    const txt=await res.text();
+    if(!res.ok){
+      const m=pesanGalat(res.status,txt,Object.assign({},c,{model}));
+      throw new Error((res.status===404||res.status===400)?m+' Pastikan "Model gambar" di Pengaturan AI adalah model yang bisa membuat gambar.':m);
+    }
+    const d=JSON.parse(txt);let b64=null,mime='image/png';
+    if(c.provider==='gemini'){
+      const parts=(((d.candidates||[])[0]||{}).content||{}).parts||[];
+      const p=parts.find(x=>x.inlineData||x.inline_data);
+      if(p){const q=p.inlineData||p.inline_data;b64=q.data;mime=q.mimeType||q.mime_type||mime}
+    }else{
+      const msg=((d.choices||[])[0]||{}).message||{};const u=(((msg.images||[])[0]||{}).image_url||{}).url||'';
+      const m=u.match(/^data:([^;]+);base64,(.*)$/);if(m){mime=m[1];b64=m[2]}
+    }
+    if(!b64)throw new Error(`Model "${model}" tidak mengirim gambar. Pilih model pembuat gambar di Pengaturan AI (kolom "Model gambar"); bisa juga model ini tidak tersedia untuk key-mu.`);
+    return new Blob([b64KeBuf(b64)],{type:mime});
+  }
+  throw new Error('Batas kuota tercapai. Coba lagi beberapa menit lagi.');
+}
+let genBlob=null;
+function gambarModal(sid){
+  const s=P.soal[sid];const ph=(s.stem.match(RE_PH)||[])[1]||'';
+  const usul=ph||('Ilustrasi pendukung untuk soal: '+s.stem.replace(/\[gbr:[a-z0-9]+\]/g,'').replace(/```[\s\S]*?```/g,'').replace(/\|.*\|/g,'').replace(/\s+/g,' ').trim().slice(0,220));
+  genBlob=null;
+  modal(`<h2>🖼 Gambar untuk soal no ${nomor(P.kisi.find(r=>r.id===sid))}</h2>
+   ${ph?`<div class="note warn">AI meminta gambar: ${esc(ph)}</div>`:''}
+   <h3 style="margin-top:6px">Unggah gambar sendiri</h3>
+   <p class="small muted" style="margin:0 0 6px">Foto, tangkapan layar, atau scan. Diperkecil otomatis agar pas di layar CBT.</p>
+   <button data-act="gbrUnggah" data-id="${sid}">📷 Pilih gambar</button>
+   <h3 style="margin-top:16px">Ilustrasi AI</h3>
+   <p class="small muted" style="margin:0 0 6px">Cocok untuk ilustrasi suasana/konteks. Jangan dipakai untuk gambar yang angka, label, atau ukurannya menentukan jawaban.</p>
+   <label>Deskripsi gambar</label><textarea id="gbrDesk" rows="4">${esc(usul)}</textarea>
+   <div class="row" style="margin-top:8px"><button class="pri" data-act="gbrAI" data-id="${sid}">✨ Buat ilustrasi</button></div>
+   <div class="genprev" id="gbrHasil"></div>
+   <div class="row end" style="margin-top:12px"><button data-act="closeModal">Tutup</button></div>`);
+}
+let unggahTujuan=null;
+async function prosesUnggah(file){
+  const tj=unggahTujuan;unggahTujuan=null;if(!file||!tj)return;
+  busy(true,'Memproses gambar…');
+  try{
+    const id=await simpanGambar(file,{sumber:'unggah',nama:file.name||'gambar'});
+    if(tj.mode==='soal'){pasangGambar(P.soal[tj.sid],id);simpan();tutupModal();render();toast('Gambar dipasang.')}
+    else{sisipGambarKe(tj.el,id);const card=tj.el.closest('[data-soal]');const th=card&&card.querySelector('.thumbs');if(th)th.innerHTML=thumbsHTML()}
+  }catch(e){pesan('Gagal memproses gambar',esc(e.message||'Format tidak dikenali')+'<br>Format yang didukung: JPG, PNG, WEBP, GIF.')}
+  finally{busy(false)}
+}
+function sisipkanKeField(el,ins){
+  const a0=el.selectionStart==null?el.value.length:el.selectionStart,a1=el.selectionEnd==null?a0:el.selectionEnd;
+  el.value=el.value.slice(0,a0)+ins+el.value.slice(a1);el.focus();try{el.setSelectionRange(a0+ins.length,a0+ins.length)}catch(_){}
+  el.dispatchEvent(new Event('input',{bubbles:true}));
+}
+function sisipGambarKe(el,id){
+  let ins=`[gbr:${id}]`;
+  if(el.tagName==='TEXTAREA'){const a0=el.selectionStart==null?el.value.length:el.selectionStart,a1=el.selectionEnd==null?a0:el.selectionEnd;
+    if(a0>0&&el.value[a0-1]!=='\n')ins='\n'+ins;if(a1<el.value.length&&el.value[a1]!=='\n')ins+='\n'}
+  sisipkanKeField(el,ins);
+}
+function thumbsHTML(){
+  const ids=Object.keys(P.gambar).filter(id=>GBR.has(id)).reverse().slice(0,24);
+  return ids.length?ids.map(id=>`<button type="button" data-act="gbrSisip" data-id="${id}" title="Sisipkan gambar ini"><img src="${GBR.get(id).url}" alt=""><span>${P.gambar[id].sumber==='ai'?'AI':'foto'}</span></button>`).join(''):'<span class="small muted">Belum ada gambar di proyek ini.</span>';
+}
+
 function unduh(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000)}
+function fmtBaris(l){
+  return esc(l).replace(/\[gbr:([a-z0-9]+)\]/g,(m,id)=>{const g=GBR.get(id);return g?`<img class="gimg" src="${g.url}" alt="gambar">`:'<span class="ph">[gambar belum termuat]</span>'})
+    .replace(/\[GAMBAR:\s*([^\]]*)\]/gi,(m,d)=>`<span class="ph">🖼 Perlu gambar: ${d}</span>`);
+}
+function tabelHTML(blk){
+  const t=window.GASH.parseTabel(blk);
+  return `<table class="tb">${t.rows.map((r,ri)=>`<tr>${r.map(c=>t.header&&ri===0?`<th>${fmtBaris(c)}</th>`:`<td>${fmtBaris(c)}</td>`).join('')}</tr>`).join('')}</table>`;
+}
 function fmt(t){
-  const parts=String(t||'').split(/```[a-zA-Z0-9]*\n?/);
-  return parts.map((seg,i)=>i%2?`<pre>${esc(seg.replace(/\n+$/,''))}</pre>`:esc(seg).replace(/^\n+|\n+$/g,'').replace(/\n/g,'<br>')).join('');
+  return window.GASH.bagianTeks(t).map(({code,seg})=>{
+    if(code)return `<pre>${esc(seg)}</pre>`;
+    let h='',prevTeks=false;
+    window.GASH.potong(seg).forEach(it=>{
+      if(it.tabel){h+=tabelHTML(it.tabel);prevTeks=false}
+      else{h+=(prevTeks?'<br>':'')+fmtBaris(it.teks);prevTeks=true}
+    });
+    return h;
+  }).join('');
 }
 function band(l){const n=parseInt(String(l).replace(/\D/g,''))||0;return n<=2?1:n===3?2:3}
 
@@ -710,7 +953,7 @@ function promptSoal(rows,catatan){
     SKT:`- SKT: {"id","stem","kunci":"jawaban 1–3 kata atau angka, pasti tunggal","pembahasan"}`,
     ESY:`- ESY: {"id","stem","kunci":"jawaban rujukan lengkap","pedoman":"pedoman penskoran per aspek dengan rincian skor","skor":skor maksimal (angka),"pembahasan"}`
   };
-  return `${idRingkas()}\n\nMateri acuan:\n"""\n${materiRingkas(30000)}\n"""\n\nTulis satu soal untuk setiap butir kisi-kisi berikut:\n${JSON.stringify(data,null,1)}\n\nSkema per bentuk:\n${tipeAda.map(t=>skema[t]).join('\n')}\n\nAturan:\n- Bahasa soal: ${bp.bahasa}.\n- Soal harus benar-benar mengukur indikator, materi, dan level yang diminta. Level C4 ke atas wajib memakai stimulus (kasus, data, tabel teks, potongan kode, atau ilustrasi kejadian).\n- Kunci jawaban harus benar. PG hanya punya satu opsi benar. Pengecoh masuk akal dan panjang opsi seimbang. Jangan memakai opsi "semua benar", "semua salah", atau yang merujuk opsi lain (misal "A dan B benar").\n- Tanpa gambar. Jika perlu kode program/pseudocode/tabel, tulis sebagai teks; kode program diletakkan di dalam blok \`\`\` dengan baris baru.\n- "pembahasan" 1–3 kalimat yang menjelaskan alasan jawaban benar.\n${P.bp.rumus?ATURAN_RUMUS:''}${catatan?'- Catatan guru untuk soal ini: '+catatan+'\n':''}\nFormat: {"soal":[ ... ]} — satu objek per butir, "id" sama persis dengan id butir.`;
+  return `${idRingkas()}\n\nMateri acuan:\n"""\n${materiRingkas(30000)}\n"""\n\nTulis satu soal untuk setiap butir kisi-kisi berikut:\n${JSON.stringify(data,null,1)}\n\nSkema per bentuk:\n${tipeAda.map(t=>skema[t]).join('\n')}\n\nAturan:\n- Bahasa soal: ${bp.bahasa}.\n- Soal harus benar-benar mengukur indikator, materi, dan level yang diminta. Level C4 ke atas wajib memakai stimulus (kasus, data, tabel teks, potongan kode, atau ilustrasi kejadian).\n- Kunci jawaban harus benar. PG hanya punya satu opsi benar. Pengecoh masuk akal dan panjang opsi seimbang. Jangan memakai opsi "semua benar", "semua salah", atau yang merujuk opsi lain (misal "A dan B benar").\n- Kode program/pseudocode diletakkan di dalam blok \`\`\` dengan baris baru.\n- Jika perlu tabel data, tulis tabel markdown: tiap baris diawali dan diakhiri tanda |, baris kedua pemisah |---|---|, maksimal 6 kolom, isi sel singkat tanpa rumus LaTeX. Tabel berada di baris tersendiri (pisahkan dengan baris baru).\n- Jika soal benar-benar memerlukan gambar/diagram yang tidak bisa diganti teks atau tabel, tulis penanda [GAMBAR: deskripsi lengkap gambar yang dibutuhkan] pada baris tersendiri di posisi gambar. Gunakan seperlunya; utamakan stimulus teks atau tabel, dan jangan meminta gambar yang angka/labelnya menentukan jawaban.\n- "pembahasan" 1–3 kalimat yang menjelaskan alasan jawaban benar.\n${P.bp.rumus?ATURAN_RUMUS:''}${catatan?'- Catatan guru untuk soal ini: '+catatan+'\n':''}\nFormat: {"soal":[ ... ]} — satu objek per butir, "id" sama persis dengan id butir.`;
 }
 const ATURAN_RUMUS=`- RUMUS: tulis rumus sederhana dengan simbol Unicode (x², x³, √5, π, ≤, ≥, ≠, ±, ×, ÷, °, ½). Rumus yang tidak bisa ditulis rapi dengan Unicode (pecahan bertingkat, akar berisi pecahan/operasi, limit, integral, sigma, matriks, logaritma berbasis) tulis dalam LaTeX di antara satu tanda dolar, misalnya $\\dfrac{x^2-4}{x-2}$. Pakai \\dfrac untuk pecahan. Jangan memakai $$...$$, \\( \\) atau \\[ \\]. Jangan memakai tanda $ untuk keperluan lain (mata uang tulis "Rp").
 - Di dalam JSON, setiap backslash LaTeX WAJIB ditulis ganda, contoh: "$\\\\dfrac{1}{2}$".
@@ -718,7 +961,7 @@ const ATURAN_RUMUS=`- RUMUS: tulis rumus sederhana dengan simbol Unicode (x², x
 `;
 function promptCek(list){
   const data=list.map(({row,s})=>({id:row.id,tipe:s.tipe,indikator:row.indikator,materi:row.materi,levelKisi:row.level,soal:ringkasSoal(s)}));
-  return `Periksa setiap soal terhadap butir kisi-kisinya.\nUntuk tiap soal tentukan:\n- "sesuai": true jika soal benar-benar mengukur indikator dan materi pada kisi-kisi.\n- "level": level kognitif yang SEBENARNYA diukur soal (C1–C6, Taksonomi Bloom revisi). Soal yang hanya menanyakan definisi/hafalan adalah C1.\n- "kunciBenar": true jika kunci jawaban benar (PG: tepat satu opsi benar).\n- "catatan": saran perbaikan singkat dalam bahasa Indonesia (kosongkan jika sudah baik).\nUntuk soal hitungan, kerjakan ulang soalnya sendiri sebelum menilai kunci.\n\nData:\n${JSON.stringify(data,null,1)}\n\nFormat: {"hasil":[{"id":"...","sesuai":true,"level":"C3","kunciBenar":true,"catatan":""}]}`;
+  return `Periksa setiap soal terhadap butir kisi-kisinya.\nUntuk tiap soal tentukan:\n- "sesuai": true jika soal benar-benar mengukur indikator dan materi pada kisi-kisi.\n- "level": level kognitif yang SEBENARNYA diukur soal (C1–C6, Taksonomi Bloom revisi). Soal yang hanya menanyakan definisi/hafalan adalah C1.\n- "kunciBenar": true jika kunci jawaban benar (PG: tepat satu opsi benar).\n- "catatan": saran perbaikan singkat dalam bahasa Indonesia (kosongkan jika sudah baik).\nUntuk soal hitungan, kerjakan ulang soalnya sendiri sebelum menilai kunci. Penanda [gbr:...] adalah gambar yang tidak bisa kamu lihat; jangan menilai isinya.\n\nData:\n${JSON.stringify(data,null,1)}\n\nFormat: {"hasil":[{"id":"...","sesuai":true,"level":"C3","kunciBenar":true,"catatan":""}]}`;
 }
 function ringkasSoal(s){
   const o={stem:s.stem};
@@ -782,6 +1025,11 @@ function masalah(s,row){
   if(s.tipe==='URT'&&(s.urutan||[]).length<3)m.push(['b','Butir urutan kurang dari 3.']);
   if(s.tipe==='SKT'){if(!s.kunci)m.push(['b','Kunci kosong.']);else if(s.kunci.split(/\s+/).length>3)m.push(['w','Kunci isian singkat terlalu panjang; CBT menilai jawaban yang persis sama.'])}
   if(s.tipe==='ESY'&&!s.kunci)m.push(['b','Jawaban rujukan kosong.']);
+  {const ph=teksSoal(s).map(x=>(x.match(RE_PH)||[])[1]).find(x=>x!=null);if(ph!=null)m.push(['b','Soal butuh gambar: '+ph+'. Tekan 🖼 Gambar untuk unggah atau buat ilustrasi AI.'])}
+  {let hil=false;teksSoal(s).forEach(x=>{let mm;const re=/\[gbr:([a-z0-9]+)\]/g;while((mm=re.exec(x)))if(!P.gambar[mm[1]])hil=true});if(hil)m.push(['b','Ada gambar yang tidak ditemukan di proyek. Pasang ulang gambarnya.'])}
+  {const tb=[];teksSoal(s).forEach(x=>window.GASH.bagianTeks(x).forEach(({code,seg})=>{if(!code)window.GASH.potong(seg).forEach(it=>{if(it.tabel)tb.push(it.tabel)})}));
+   if(tb.some(b=>window.GASH.parseTabel(b).n>6))m.push(['w','Tabel lebih dari 6 kolom; di CBT akan tampil kecil.']);
+   if(P.bp.rumus&&tb.some(b=>b.join('').indexOf('$')>=0))m.push(['w','Rumus LaTeX di dalam tabel belum didukung; tulis dengan simbol Unicode.'])}
   if(P.bp.rumus){
     if(teksSoal(s).some(x=>((x.match(/\$/g)||[]).length%2)))m.push(['b','Ada tanda $ rumus yang tidak berpasangan.']);
     if(s.tipe==='SKT'&&/[$\\]/.test(s.kunci||''))m.push(['b','Kunci isian singkat tidak boleh berupa rumus; tulis angka/kata biasa.']);
@@ -921,12 +1169,12 @@ function v4(){
 }
 let filterProb=false;
 function scard(r,s,i,m){
-  const head=`<div class="shead"><span class="no">${i+1}.</span><span class="chip acc">${r.tipe}</span><span class="chip">${r.level}</span><span class="chip">CP ${esc(r.cp)}</span><span class="small muted">${esc(r.materi)}</span></div><div class="ind">${esc(r.indikator)}</div>`;
+  const head=`<div class="shead"><span class="no">${i+1}.</span><span class="chip acc">${r.tipe}</span><span class="chip">${r.level}</span><span class="chip">CP ${esc(r.cp)}</span><span class="small muted">${esc(r.materi)}</span>${s&&adaIlustrasiAI(s)?'<span class="chip warn">ilustrasi AI</span>':''}</div><div class="ind">${esc(r.indikator)}</div>`;
   if(editId===r.id&&s)return `<div class="scard" data-soal="${r.id}">${head}${formEdit(s)}</div>`;
   const prob=m.some(x=>x[0]==='b');
   return `<div class="scard ${prob?'prob':''}" data-soal="${r.id}">${head}${s?viewSoal(s):'<p class="muted small">Belum dibuat.</p>'}
    ${m.length?`<div class="issues">${m.map(x=>`<div class="issue ${x[0]==='w'?'w':''}">${esc(x[1])}${x[2]==='level'?` <button class="sm" data-act="pakaiLevel">Pakai ${esc(s.cek.level)} di kisi</button>`:''}</div>`).join('')}</div>`:(s&&s.cek?'<div class="issues"><div class="issue" style="background:var(--okbg);color:var(--ok)">✓ Lolos cek AI</div></div>':'')}
-   <div class="sact">${s?'<button class="sm" data-act="soalEdit">✏️ Edit</button>':''}<button class="sm" data-act="soalRegen">✨ ${s?'Buat ulang':'Buat'}</button>${s?'<button class="sm ghost danger" data-act="soalDel">Hapus</button>':''}</div></div>`;
+   <div class="sact">${s?'<button class="sm" data-act="soalEdit">✏️ Edit</button>':''}${s?'<button class="sm" data-act="soalGambar">🖼 Gambar</button>':''}<button class="sm" data-act="soalRegen">✨ ${s?'Buat ulang':'Buat'}</button>${s?'<button class="sm ghost danger" data-act="soalDel">Hapus</button>':''}</div></div>`;
 }
 function viewSoal(s){
   let h=`<div class="stem">${fmt(s.stem)}</div>`;
@@ -943,6 +1191,7 @@ function viewSoal(s){
 function formEdit(s){
   let h=`<div class="ef">`;
   if(P.bp.rumus)h+=`<div><label>Sisipkan simbol/rumus ke kolom yang sedang aktif</label><div class="symbar">${SIMBOL.map((x,i)=>`<button type="button" data-act="sym" data-i="${i}">${esc(x[0])}</button>`).join('')}</div></div>`;
+  h+=`<div><label>Gambar & tabel (disisipkan ke kolom yang sedang aktif)</label><div class="row" style="margin-bottom:6px"><button type="button" class="sm" data-act="edUnggah">📷 Unggah gambar</button><button type="button" class="sm" data-act="edTabel">▦ Sisipkan tabel</button></div><div class="thumbs">${thumbsHTML()}</div></div>`;
   h+=`<div><label class="mathjax_ignore">Rumusan soal ${P.bp.rumus?'(rumus LaTeX diapit tanda $ … $)':'(kode program diapit \`\`\`)'}</label><textarea data-f="stem" rows="5">${esc(s.stem)}</textarea></div>`;
   const ks=(s.kunci||'').split(',');
   if(s.tipe==='PG'||s.tipe==='PGX'){
@@ -961,7 +1210,7 @@ function formEdit(s){
   }
   h+=`<div class="row"><div style="width:120px"><label>Skor</label><input type="number" data-f="skor" value="${esc(s.skor)}" inputmode="decimal"></div></div>
    <div><label>Pembahasan</label><textarea data-f="pembahasan" rows="3">${esc(s.pembahasan)}</textarea></div>
-   ${P.bp.rumus?'<div><label>Pratinjau</label><div class="pv"></div></div>':''}
+   <div><label>Pratinjau</label><div class="pv"></div></div>
    <div class="row end"><button data-act="soalBatal">Batal</button><button class="pri" data-act="soalSimpan">Simpan</button></div></div>`;
   return h;
 }
@@ -995,6 +1244,7 @@ function bukaPengaturan(){
    <div class="fld"><label>API key</label><div class="row"><input id="aiKey" type="password" class="sp" value="${esc(c.key)}" placeholder="${c.provider==='gemini'?'AIza...':'sk-or-...'}" autocomplete="off" style="width:auto"><button class="sm" data-act="lihatKey">👁</button></div></div>
    <div class="fld"><label>Model</label><div class="row"><input id="aiModel" class="sp" list="dlModel" value="${esc(c.model)}" style="width:auto"><button class="sm" data-act="muatModel">Muat daftar model</button></div><datalist id="dlModel">${modelList.map(m=>`<option value="${esc(m)}">`).join('')}</datalist></div>
    <div class="fld"><label>Model untuk Cek keselarasan (opsional; kosong = sama dengan model di atas)</label><input id="aiCekModel" list="dlModel" value="${esc(c.cekModel||'')}" placeholder="misal model yang lebih kuat bernalar"></div>
+   <div class="fld"><label>Model gambar (untuk Ilustrasi AI)</label><input id="aiImgModel" list="dlModel" value="${esc(c.imgModel||modelGambarDefault(c.provider))}"><div class="small muted">Harus model yang bisa membuat gambar; biasanya berbayar atau kuotanya terpisah.</div></div>
    <div class="grid"><div class="fld"><label>Soal per permintaan</label><input id="aiBatch" type="number" min="1" max="10" value="${c.batch}"></div><div class="fld"><label>Jeda antarpermintaan (detik)</label><input id="aiJeda" type="number" min="0" max="60" value="${c.jeda}"></div></div>
    <label style="display:flex;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" id="aiSimpan" ${c.simpan!==false?'checked':''}>Simpan key di perangkat ini (hapus centang untuk perangkat bersama)</label>
    <div id="aiStatus" class="note hidden"></div>
@@ -1003,7 +1253,7 @@ function bukaPengaturan(){
    <div class="small muted" style="margin:8px 0">Key hanya disimpan di browser ini dan dikirim langsung ke ${c.provider==='gemini'?'Google':'OpenRouter'}; tidak ikut ke file proyek.</div>
    <div class="row"><button class="ghost danger" data-act="hapusKey">Hapus key</button><span class="sp"></span><button data-act="tesAI">Tes koneksi</button><button class="pri" data-act="simpanAI">Simpan</button></div>`);
 }
-function bacaForm(){const c=aiCfg();c.key=$('#aiKey').value.trim();c.model=$('#aiModel').value.trim()||c.model;c.batch=Math.min(10,Math.max(1,parseInt($('#aiBatch').value)||5));c.jeda=Math.max(0,parseFloat($('#aiJeda').value)||0);c.simpan=$('#aiSimpan').checked;c.cekModel=$('#aiCekModel').value.trim();return c}
+function bacaForm(){const c=aiCfg();c.key=$('#aiKey').value.trim();c.model=$('#aiModel').value.trim()||c.model;c.batch=Math.min(10,Math.max(1,parseInt($('#aiBatch').value)||5));c.jeda=Math.max(0,parseFloat($('#aiJeda').value)||0);c.simpan=$('#aiSimpan').checked;c.cekModel=$('#aiCekModel').value.trim();c.imgModel=$('#aiImgModel').value.trim();return c}
 function aiStatus(t,cls){const e=$('#aiStatus');if(!e)return;e.className='note '+(cls||'');e.textContent=t}
 
 /* ---------- aksi ---------- */
@@ -1150,12 +1400,16 @@ document.addEventListener('click',async e=>{
       if(step<5){editId=null;step++;render();scrollTo(0,0)}break;
     case 'stop':STOP=true;$('#busyText').textContent='Menghentikan…';break;
     case 'closeModal':tutupModal();break;
-    case 'newProj':if(confirm('Buat proyek baru? Proyek sekarang akan diganti (simpan ke file dulu jika perlu).')){P=proyekBaru(P);step=1;editId=null;simpan();render()}break;
-    case 'saveFile':{const blob=new Blob([JSON.stringify(P,null,1)],{type:'application/json'});unduh(blob,`asesmen_${(P.identitas.mapel||'proyek').replace(/\W+/g,'_')}_${(P.identitas.kelas||'').replace(/\W+/g,'_')}.json`);break}
+    case 'newProj':if(confirm('Buat proyek baru? Proyek sekarang akan diganti (simpan ke file dulu jika perlu).')){P=proyekBaru(P);step=1;editId=null;bersihkanGambar();try{await IDB.clear()}catch(e){}simpan();render()}break;
+    case 'saveFile':{busy(true,'Menyiapkan file proyek…');
+      try{await muatGambar();const data={};for(const id of Object.keys(P.gambar)){const g=GBR.get(id);if(g)data[id]=bufKeB64(await g.blob.arrayBuffer())}
+        const blob=new Blob([JSON.stringify(Object.assign({},P,{gambarData:data}))],{type:'application/json'});
+        unduh(blob,`asesmen_${(P.identitas.mapel||'proyek').replace(/\W+/g,'_')}_${(P.identitas.kelas||'').replace(/\W+/g,'_')}.json`)}
+      catch(err){pesan('Gagal menyimpan file',esc(err.message))}finally{busy(false)}break}
     case 'openFile':$('#fProj').click();break;
     case 'help':bantuan();break;
     case 'openSettings':bukaPengaturan();break;
-    case 'prov':{const c=bacaForm();c.provider=b.dataset.p;c.model=c.provider==='gemini'?'gemini-2.5-flash':'google/gemini-2.5-flash';c.cekModel='';modelList=[];aiSave(c);bukaPengaturan();badge();break}
+    case 'prov':{const c=bacaForm();c.provider=b.dataset.p;c.model=c.provider==='gemini'?'gemini-2.5-flash':'google/gemini-2.5-flash';c.cekModel='';c.imgModel='';modelList=[];aiSave(c);bukaPengaturan();badge();break}
     case 'lihatKey':{const k=$('#aiKey');k.type=k.type==='password'?'text':'password';break}
     case 'muatModel':{const c=bacaForm();aiStatus('Memuat daftar model…');
       try{
@@ -1187,11 +1441,31 @@ document.addEventListener('click',async e=>{
     case 'soalSimpan':simpanEdit(b.closest('[data-soal]'),P.soal[sid]);editId=null;simpan();render();toast('Soal disimpan.');break;
     case 'soalDel':if(confirm('Hapus soal ini? Butir kisi-kisi tetap ada.')){delete P.soal[sid];simpan();render()}break;
     case 'soalRegen':regenModal(sid);break;
+    case 'soalGambar':gambarModal(sid);break;
+    case 'gbrUnggah':unggahTujuan={mode:'soal',sid:b.dataset.id};$('#fGambar').click();break;
+    case 'edUnggah':{const card=b.closest('.ef');unggahTujuan={mode:'field',el:(lastField&&card.contains(lastField))?lastField:card.querySelector('[data-f="stem"]')};$('#fGambar').click();break}
+    case 'edTabel':{const card=b.closest('.ef');const el=(lastField&&card.contains(lastField)&&lastField.tagName==='TEXTAREA')?lastField:card.querySelector('[data-f="stem"]');
+      const pos=el.selectionStart==null?el.value.length:el.selectionStart;const pre=(pos>0&&el.value[pos-1]!=='\n')?'\n':'';
+      sisipkanKeField(el,pre+'| Kolom 1 | Kolom 2 | Kolom 3 |\n|---|---|---|\n| isi | isi | isi |\n| isi | isi | isi |\n');break}
+    case 'gbrSisip':{const card=b.closest('.ef');const el=(lastField&&card.contains(lastField))?lastField:card.querySelector('[data-f="stem"]');sisipGambarKe(el,b.dataset.id);break}
+    case 'gbrAI':{const sidx=b.dataset.id;const desk=$('#gbrDesk').value.trim();if(!desk){toast('Isi deskripsi gambar dulu.');break}
+      STOP=false;busy(true,'AI membuat ilustrasi… (bisa 10–40 detik)');
+      try{genBlob=await aiGambar(desk);const u=URL.createObjectURL(genBlob);
+        $('#gbrHasil').innerHTML=`<img src="${u}" alt="hasil ilustrasi"><div class="note warn">Periksa gambar: pastikan sesuai soal dan tidak ada tulisan/angka yang menyesatkan.</div><div class="row end"><button data-act="gbrAI" data-id="${sidx}">↻ Buat ulang</button><button class="pri" data-act="gbrPakai" data-id="${sidx}">Pakai gambar ini</button></div>`}
+      catch(err){$('#gbrHasil').innerHTML=`<div class="note bad">${esc(err.message)}</div>`}
+      finally{busy(false)}break}
+    case 'gbrPakai':{if(!genBlob)break;busy(true,'Menyimpan gambar…');
+      try{const id=await simpanGambar(genBlob,{sumber:'ai',deskripsi:$('#gbrDesk').value.trim()});pasangGambar(P.soal[b.dataset.id],id);simpan();tutupModal();render();toast('Ilustrasi dipasang. Atur posisinya lewat Edit bila perlu.')}
+      catch(err){pesan('Gagal menyimpan gambar',esc(err.message))}finally{busy(false)}break}
+
     case 'regenGo':{const id=b.dataset.id;const note=$('#regenNote').value.trim();tutupModal();genSoal(P.kisi.filter(r=>r.id===id),note);break}
     case 'pakaiLevel':{const row=P.kisi.find(r=>r.id===sid),s=P.soal[sid];if(row&&s&&s.cek){row.level=s.cek.level;simpan();render()}break}
     case 'exp':{busy(true,'Membuat dokumen…');let gagal=[];
-      try{await siapDocx();const Rm=await siapRumus();gagal=Rm.gagal;$('#busyProg').textContent='';const {blob,name}=await window.GAS_EXPORT.make(b.dataset.kind,P,Rm);unduh(blob,name);toast('Dokumen diunduh: '+name)}
+      let hilang=[];
+      try{await siapDocx();const Rm=await siapRumus();gagal=Rm.gagal;$('#busyProg').textContent='Menyiapkan gambar dan tabel…';const Gm=await siapGambar(b.dataset.kind);hilang=Gm.hilang;Object.assign(Rm,Gm);$('#busyProg').textContent='';
+        const {blob,name}=await window.GAS_EXPORT.make(b.dataset.kind,P,Rm);unduh(blob,name);toast('Dokumen diunduh: '+name)}
       catch(err){pesan('Gagal membuat dokumen',esc(err.message))}finally{busy(false)}
+      if(hilang.length)pesan('Ada gambar yang tidak ditemukan',`${hilang.length} gambar tidak ada di perangkat ini sehingga ditulis "[gambar hilang]". Pasang ulang gambarnya di langkah 4.`);
       if(gagal.length)pesan('Ada rumus yang gagal diubah',`Rumus berikut tidak valid sehingga ditulis apa adanya di dokumen. Perbaiki di langkah 4 lalu unduh ulang:<ul>${gagal.map(t=>`<li><code>${esc(t)}</code></li>`).join('')}</ul>`);
       break}
     case 'sym':{const card=b.closest('.ef');const el=(lastField&&card.contains(lastField))?lastField:card.querySelector('[data-f="stem"]');
@@ -1230,18 +1504,24 @@ main.addEventListener('input',e=>{
     if(t.tagName==='SELECT')render();
   }
 });
+$('#fGambar').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)prosesUnggah(f);else unggahTujuan=null});
 $('#fMateri').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length)bacaMateri(f)});
 $('#fProj').addEventListener('change',async e=>{
   const f=e.target.files[0];e.target.value='';if(!f)return;
   try{const p=JSON.parse(await f.text());if(!p||!p.versi||!Array.isArray(p.kisi))throw new Error('Bukan file proyek Generator Asesmen Sumatif.');
     if(!confirm('Buka proyek ini? Proyek yang sedang terbuka akan diganti.'))return;
-    P=lengkapi(p);step=P.step||1;editId=null;simpan();render();toast('Proyek dibuka.')}
+    busy(true,'Membuka proyek…');
+    try{bersihkanGambar();await IDB.clear();const gd=p.gambarData||{};delete p.gambarData;
+      for(const [id,b64] of Object.entries(gd)){const meta=(p.gambar||{})[id]||{};await IDB.put(id,{buf:b64KeBuf(b64),type:'image/png',w:meta.w,h:meta.h})}}
+    finally{busy(false)}
+    P=lengkapi(p);step=P.step||1;editId=null;simpan();await muatGambar();render();toast('Proyek dibuka.')}
   catch(err){pesan('Gagal membuka file',esc(err.message))}
 });
 document.addEventListener('focusin',e=>{const t=e.target;if(t.closest&&t.closest('.ef')&&(t.tagName==='TEXTAREA'||(t.tagName==='INPUT'&&!/radio|checkbox|number/.test(t.type))))lastField=t});
 document.addEventListener('mousedown',e=>{if(e.target.closest('.symbar'))e.preventDefault()});
 window.addEventListener('beforeunload',simpan);
 render();
+muatGambar().then(n=>{if(n)render()}).catch(()=>{});
 if(!aiCfg().key)setTimeout(()=>toast('Isi API key di ⚙️ Pengaturan AI sebelum memakai fitur AI.'),600);
 </script>
 </body>
