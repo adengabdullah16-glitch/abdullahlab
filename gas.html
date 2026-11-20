@@ -555,7 +555,7 @@ function proyekBaru(prev){
   return {versi:1,dibuat:new Date().toISOString(),step:1,
     identitas:{sekolah:i.sekolah||'',asesmen:'Asesmen Sumatif Akhir Semester (ASAS)',tahun:tahunAjar(),jenjang:i.jenjang||'SMA',mapel:'',kelas:'',semester:'',kurikulum:'Kurikulum Merdeka',waktu:'90 menit',buku:'',penulis:i.penulis||'',nipPenulis:i.nipPenulis||'',kepsek:i.kepsek||'',nipKepsek:i.nipKepsek||'',kota:i.kota||'',tanggal:''},
     materi:'',sumber:[],cp:[{kode:'1',teks:''}],topik:'',
-    bp:{PG:20,PGX:0,BNR:0,JD:0,JDX:0,URT:0,SKT:0,ESY:5,opsi:5,l1:30,l2:50,l3:20,bahasa:'Indonesia',catatan:'',rumus:false,rumusManual:false},
+    bp:{PG:20,PGX:0,BNR:0,JD:0,JDX:0,URT:0,SKT:0,ESY:5,opsi:5,l1:30,l2:50,l3:20,bahasa:'Indonesia',catatan:'',rumus:false,rumusManual:false,tabel:'Jarang'},
     kisi:[],soal:{},gambar:{},ekspor:{kertas:'A4',absPG:false}};
 }
 function muatProyek(){try{const p=JSON.parse(localStorage.getItem(LS_P)||'null');if(p&&p.versi)return lengkapi(p)}catch(e){}return null}
@@ -572,11 +572,13 @@ function aiCfg(){
   c.model=c.model||(c.provider==='gemini'?'gemini-2.5-flash':'google/gemini-2.5-flash');
   c.jeda=c.jeda==null?6:c.jeda;c.batch=c.batch||5;
   c.key=c.simpan===false?(sessionStorage.getItem(SS_KEY)||''):(c.key||'');
+  c.imgKey=c.simpan===false?(sessionStorage.getItem(SS_KEY+'_img')||''):(c.imgKey||'');
+  c.imgProv=c.imgProv||'sama';
   return c;
 }
 function aiSave(c){
   const copy=Object.assign({},c);
-  if(c.simpan===false){sessionStorage.setItem(SS_KEY,c.key||'');delete copy.key}else sessionStorage.removeItem(SS_KEY);
+  if(c.simpan===false){sessionStorage.setItem(SS_KEY,c.key||'');sessionStorage.setItem(SS_KEY+'_img',c.imgKey||'');delete copy.key;delete copy.imgKey}else{sessionStorage.removeItem(SS_KEY);sessionStorage.removeItem(SS_KEY+'_img')}
   localStorage.setItem(LS_AI,JSON.stringify(copy));
 }
 
@@ -755,36 +757,73 @@ function bufKeB64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.leng
 function b64KeBuf(b){const s=atob(b);const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u.buffer}
 
 /* ---------- ilustrasi AI ---------- */
-function modelGambarDefault(p){return p==='gemini'?'gemini-2.5-flash-image':'google/gemini-2.5-flash-image'}
+const MODEL_GBR_LAMA=['gemini-2.5-flash-image','google/gemini-2.5-flash-image','gemini-2.5-flash-image-preview'];
+function modelGambarDefault(p){return p==='gemini'?'gemini-3.1-flash-image':''}
+function provGambar(c){return (!c.imgProv||c.imgProv==='sama')?c.provider:c.imgProv}
+function keyGambar(c){return provGambar(c)===c.provider?c.key:(c.imgKey||'')}
+function modelGambar(c){const ip=provGambar(c);let m=(c.imgModel||'').trim();if(!m||MODEL_GBR_LAMA.includes(m))m=modelGambarDefault(ip);return m.replace(/^models\//,'')}
+// daftar model pembuat gambar yang tersedia untuk key ini
+async function cariModelGambar(ip,key){
+  if(!key)throw new Error('Isi key untuk penyedia gambar dulu.');
+  if(ip==='gemini'){
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':key}});const t=await r.text();
+    if(!r.ok)throw new Error(pesanGalat(r.status,t,{model:'-'}));
+    const ms=(JSON.parse(t).models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')&&/image/i.test(m.name)&&!/imagen/i.test(m.name)).map(m=>m.name.replace(/^models\//,''));
+    const skor=m=>(/flash-image/.test(m)?0:1)+(/preview/.test(m)?0.5:0)-(parseFloat((m.match(/gemini-(\d+(?:\.\d+)?)/)||[])[1])||0)/10;
+    return ms.sort((a,b)=>skor(a)-skor(b));
+  }
+  let r=await fetch('https://openrouter.ai/api/v1/images/models',{headers:{'Authorization':'Bearer '+key}});
+  if(!r.ok)r=await fetch('https://openrouter.ai/api/v1/models?output_modalities=image');
+  const t=await r.text();if(!r.ok)throw new Error(pesanGalat(r.status,t,{model:'-'}));
+  const ids=(JSON.parse(t).data||[]).filter(m=>!m.architecture||(m.architecture.output_modalities||['image']).includes('image')).map(m=>m.id);
+  const skor=m=>(/^google\//.test(m)?0:/^openai\//.test(m)?1:2)+(/:free$/.test(m)?-0.5:0);
+  return [...new Set(ids)].sort((a,b)=>skor(a)-skor(b));
+}
+function galatGambar(st,txt,ip,model){
+  let m='';try{const j=JSON.parse(txt);m=String((j.error&&(j.error.message||j.error))||j.message||'')}catch(e){m=txt.slice(0,200)}
+  if((st===429||st===403)&&/limit:\s*0|free.?tier|billing|quota/i.test(m))
+    return `Key ini tidak punya kuota untuk model gambar "${model}". Model gambar biasanya tidak termasuk tier gratis; aktifkan billing di akun ${ip==='gemini'?'Google AI Studio':'OpenRouter'}, atau pakai penyedia gambar lain.`;
+  if(st===404)return `Model gambar "${model}" tidak ditemukan untuk key ini. Buka Pengaturan AI lalu tekan "Cari model gambar".`;
+  if(st===400&&/modalit|image generation|not supported|does not support/i.test(m))return `Model "${model}" tidak bisa membuat gambar. Tekan "Cari model gambar" di Pengaturan AI.`;
+  if(st===402)return 'Kredit OpenRouter tidak cukup untuk membuat gambar. Isi kredit atau pilih model yang lebih murah.';
+  if(st===401||(st===400&&/api key/i.test(m)))return `Key untuk penyedia gambar (${ip==='gemini'?'Gemini':'OpenRouter'}) tidak valid. Periksa di Pengaturan AI.`;
+  return `Galat pembuatan gambar (${st}): ${m}`;
+}
 async function aiGambar(desk){
-  const c=aiCfg();
-  if(!c.key){bukaPengaturan();throw new Error('API key belum diisi.')}
-  const model=(c.imgModel||modelGambarDefault(c.provider)).replace(/^models\//,'');
+  const c=aiCfg();const ip=provGambar(c),key=keyGambar(c),model=modelGambar(c);
+  if(!key){bukaPengaturan();throw new Error(`Key untuk penyedia gambar (${ip==='gemini'?'Gemini':'OpenRouter'}) belum diisi.`)}
+  if(!model){bukaPengaturan();throw new Error('Model gambar belum dipilih. Tekan "Cari model gambar" di Pengaturan AI.')}
   const prompt=`Buat SATU gambar ilustrasi untuk soal ujian sekolah (SMA, Indonesia).\nIsi gambar: ${desk}\nGaya: ilustrasi sederhana dan jelas seperti di buku pelajaran, latar putih atau polos, warna lembut, proporsi wajar, rasio sekitar 4:3.\nPENTING: jangan ada tulisan, huruf, angka, label, atau watermark apa pun di dalam gambar.`;
-  for(let attempt=0;attempt<3;attempt++){
+  const kirimGbr=async(jalur)=>{
+    if(ip==='gemini')return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});
+    if(jalur==='images')return fetch('https://openrouter.ai/api/v1/images',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'X-Title':'Generator Asesmen Sumatif'},body:JSON.stringify({model,prompt,n:1,aspect_ratio:'4:3'})});
+    return fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'X-Title':'Generator Asesmen Sumatif'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],modalities:['image','text']})});
+  };
+  let jalur='images';
+  for(let attempt=0;attempt<4;attempt++){
     if(STOP)throw new Error('Dihentikan.');
     let res;
-    try{
-      res=c.provider==='gemini'
-        ?await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':c.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseModalities:['IMAGE','TEXT']}})})
-        :await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.key,'X-Title':'Generator Asesmen Sumatif'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],modalities:['image','text']})});
-    }catch(e){throw new Error('Tidak bisa terhubung ke layanan AI. Periksa koneksi internet.')}
-    if([429,500,502,503,504].includes(res.status)&&attempt<2){await tunggu([20000,45000][attempt],'Server sibuk/kena batas, mencoba lagi dalam {s} detik…');continue}
+    try{res=await kirimGbr(jalur)}catch(e){throw new Error('Tidak bisa terhubung ke layanan AI. Periksa koneksi internet.')}
     const txt=await res.text();
-    if(!res.ok){
-      const m=pesanGalat(res.status,txt,Object.assign({},c,{model}));
-      throw new Error((res.status===404||res.status===400)?m+' Pastikan "Model gambar" di Pengaturan AI adalah model yang bisa membuat gambar.':m);
+    // OpenRouter: model lama yang belum ada di Image API -> coba jalur chat
+    if(ip==='openrouter'&&jalur==='images'&&(res.status===404||res.status===400)){jalur='chat';continue}
+    if([429,500,502,503,504,524,529].includes(res.status)&&attempt<2&&!/limit:\s*0|free.?tier|billing/i.test(txt)){
+      await tunggu([20000,45000][attempt],'Server sibuk/kena batas, mencoba lagi dalam {s} detik…');continue;
     }
+    if(!res.ok)throw new Error(galatGambar(res.status,txt,ip,model));
     const d=JSON.parse(txt);let b64=null,mime='image/png';
-    if(c.provider==='gemini'){
+    if(ip==='gemini'){
       const parts=(((d.candidates||[])[0]||{}).content||{}).parts||[];
       const p=parts.find(x=>x.inlineData||x.inline_data);
       if(p){const q=p.inlineData||p.inline_data;b64=q.data;mime=q.mimeType||q.mime_type||mime}
+    }else if(jalur==='images'){
+      const it=(d.data||[])[0]||{};b64=it.b64_json||null;mime=it.media_type||mime;
     }else{
       const msg=((d.choices||[])[0]||{}).message||{};const u=(((msg.images||[])[0]||{}).image_url||{}).url||'';
       const m=u.match(/^data:([^;]+);base64,(.*)$/);if(m){mime=m[1];b64=m[2]}
     }
-    if(!b64)throw new Error(`Model "${model}" tidak mengirim gambar. Pilih model pembuat gambar di Pengaturan AI (kolom "Model gambar"); bisa juga model ini tidak tersedia untuk key-mu.`);
+    if(!b64)throw new Error(`Model "${model}" tidak mengirim gambar (mungkin ditolak filter keamanan atau model ini tidak membuat gambar). Ubah deskripsi atau tekan "Cari model gambar" di Pengaturan AI.`);
+    if(mime==='image/svg+xml')throw new Error('Model ini mengirim SVG; pilih model gambar biasa (PNG/JPG).');
     return new Blob([b64KeBuf(b64)],{type:mime});
   }
   throw new Error('Batas kuota tercapai. Coba lagi beberapa menit lagi.');
@@ -941,7 +980,7 @@ function promptKisi(counts,ada){
 }
 function promptSoal(rows,catatan){
   const bp=P.bp;const o=bp.opsi||5;
-  const data=rows.map(r=>({id:r.id,tipe:r.tipe,level:r.level,materi:r.materi,indikator:r.indikator,cp:(P.cp.find(c=>String(c.kode)===String(r.cp))||{}).teks||''}));
+  const iz=hitungIzin();const data=rows.map(r=>({id:r.id,tipe:r.tipe,level:r.level,bolehTabel:iz.tabel.has(r.id),bolehGambar:iz.gambar.has(r.id),materi:r.materi,indikator:r.indikator,cp:(P.cp.find(c=>String(c.kode)===String(r.cp))||{}).teks||''}));
   const tipeAda=[...new Set(rows.map(r=>r.tipe))];
   const skema={
     PG:`- PG: {"id","stem","opsi":[${o} teks opsi TANPA huruf awalan],"kunci":"huruf opsi benar, misal B","pembahasan"}`,
@@ -953,7 +992,7 @@ function promptSoal(rows,catatan){
     SKT:`- SKT: {"id","stem","kunci":"jawaban 1–3 kata atau angka, pasti tunggal","pembahasan"}`,
     ESY:`- ESY: {"id","stem","kunci":"jawaban rujukan lengkap","pedoman":"pedoman penskoran per aspek dengan rincian skor","skor":skor maksimal (angka),"pembahasan"}`
   };
-  return `${idRingkas()}\n\nMateri acuan:\n"""\n${materiRingkas(30000)}\n"""\n\nTulis satu soal untuk setiap butir kisi-kisi berikut:\n${JSON.stringify(data,null,1)}\n\nSkema per bentuk:\n${tipeAda.map(t=>skema[t]).join('\n')}\n\nAturan:\n- Bahasa soal: ${bp.bahasa}.\n- Soal harus benar-benar mengukur indikator, materi, dan level yang diminta. Level C4 ke atas wajib memakai stimulus (kasus, data, tabel teks, potongan kode, atau ilustrasi kejadian).\n- Kunci jawaban harus benar. PG hanya punya satu opsi benar. Pengecoh masuk akal dan panjang opsi seimbang. Jangan memakai opsi "semua benar", "semua salah", atau yang merujuk opsi lain (misal "A dan B benar").\n- Kode program/pseudocode diletakkan di dalam blok \`\`\` dengan baris baru.\n- Jika perlu tabel data, tulis tabel markdown: tiap baris diawali dan diakhiri tanda |, baris kedua pemisah |---|---|, maksimal 6 kolom, isi sel singkat tanpa rumus LaTeX. Tabel berada di baris tersendiri (pisahkan dengan baris baru).\n- Jika soal benar-benar memerlukan gambar/diagram yang tidak bisa diganti teks atau tabel, tulis penanda [GAMBAR: deskripsi lengkap gambar yang dibutuhkan] pada baris tersendiri di posisi gambar. Gunakan seperlunya; utamakan stimulus teks atau tabel, dan jangan meminta gambar yang angka/labelnya menentukan jawaban.\n- "pembahasan" 1–3 kalimat yang menjelaskan alasan jawaban benar.\n${P.bp.rumus?ATURAN_RUMUS:''}${catatan?'- Catatan guru untuk soal ini: '+catatan+'\n':''}\nFormat: {"soal":[ ... ]} — satu objek per butir, "id" sama persis dengan id butir.`;
+  return `${idRingkas()}\n\nMateri acuan:\n"""\n${materiRingkas(30000)}\n"""\n\nTulis satu soal untuk setiap butir kisi-kisi berikut:\n${JSON.stringify(data,null,1)}\n\nSkema per bentuk:\n${tipeAda.map(t=>skema[t]).join('\n')}\n\nAturan:\n- Bahasa soal: ${bp.bahasa}.\n- Soal harus benar-benar mengukur indikator, materi, dan level yang diminta. Level C4 ke atas wajib memakai stimulus (kasus, data dalam kalimat, potongan kode, atau ilustrasi kejadian).\n- Kunci jawaban harus benar. PG hanya punya satu opsi benar. Pengecoh masuk akal dan panjang opsi seimbang. Jangan memakai opsi "semua benar", "semua salah", atau yang merujuk opsi lain (misal "A dan B benar").\n- Kode program/pseudocode diletakkan di dalam blok \`\`\` dengan baris baru.\n- TABEL: hanya butir dengan "bolehTabel": true yang boleh memakai tabel, dan tetap hanya jika data memang lebih jelas dalam tabel. Butir dengan "bolehTabel": false DILARANG memakai tabel dalam bentuk apa pun; sajikan datanya dalam kalimat. Format tabel: markdown, tiap baris diawali dan diakhiri tanda |, baris kedua pemisah |---|---|, maksimal 6 kolom, isi sel singkat tanpa rumus LaTeX, di baris tersendiri.\n- GAMBAR: hanya butir dengan "bolehGambar": true yang boleh meminta gambar, dengan menulis penanda [GAMBAR: deskripsi lengkap gambar] pada baris tersendiri, dan hanya jika gambar benar-benar perlu. Butir lain DILARANG menulis penanda [GAMBAR]. Jangan meminta gambar yang angka/labelnya menentukan jawaban.\n- "pembahasan" 1–3 kalimat yang menjelaskan alasan jawaban benar.\n${P.bp.rumus?ATURAN_RUMUS:''}${catatan?'- Catatan guru untuk soal ini: '+catatan+'\n':''}\nFormat: {"soal":[ ... ]} — satu objek per butir, "id" sama persis dengan id butir.`;
 }
 const ATURAN_RUMUS=`- RUMUS: tulis rumus sederhana dengan simbol Unicode (x², x³, √5, π, ≤, ≥, ≠, ±, ×, ÷, °, ½). Rumus yang tidak bisa ditulis rapi dengan Unicode (pecahan bertingkat, akar berisi pecahan/operasi, limit, integral, sigma, matriks, logaritma berbasis) tulis dalam LaTeX di antara satu tanda dolar, misalnya $\\dfrac{x^2-4}{x-2}$. Pakai \\dfrac untuk pecahan. Jangan memakai $$...$$, \\( \\) atau \\[ \\]. Jangan memakai tanda $ untuk keperluan lain (mata uang tulis "Rp").
 - Di dalam JSON, setiap backslash LaTeX WAJIB ditulis ganda, contoh: "$\\\\dfrac{1}{2}$".
@@ -1001,6 +1040,7 @@ function normSoal(r,row){
     case 'SKT':s.kunci=str(r.kunci||r.jawaban);break;
     case 'ESY':s.kunci=str(r.kunci||r.jawaban);s.pedoman=str(r.pedoman);break;
   }
+  s.aiTabel=adaTabel(s);s.aiGambar=teksSoal(s).some(x=>RE_PH.test(x));
   return s;
 }
 // sebar posisi kunci PG agar tidak menumpuk di satu huruf
@@ -1025,6 +1065,9 @@ function masalah(s,row){
   if(s.tipe==='URT'&&(s.urutan||[]).length<3)m.push(['b','Butir urutan kurang dari 3.']);
   if(s.tipe==='SKT'){if(!s.kunci)m.push(['b','Kunci kosong.']);else if(s.kunci.split(/\s+/).length>3)m.push(['w','Kunci isian singkat terlalu panjang; CBT menilai jawaban yang persis sama.'])}
   if(s.tipe==='ESY'&&!s.kunci)m.push(['b','Jawaban rujukan kosong.']);
+  {const iz=hitungIzin();
+   if(tabelTakDiminta(s,row,iz))m.push(['w',`Soal memakai tabel padahal tidak diminta (pengaturan "${P.bp.tabel||'Jarang'}"). Buat ulang, atau Edit lalu Simpan jika tabelnya ingin dipertahankan.`]);
+   if(gambarTakDiminta(s,row,iz))m.push(['w','AI meminta gambar padahal soal ini tidak dijatahkan gambar. Buat ulang, atau pasang gambarnya jika memang perlu.'])}
   {const ph=teksSoal(s).map(x=>(x.match(RE_PH)||[])[1]).find(x=>x!=null);if(ph!=null)m.push(['b','Soal butuh gambar: '+ph+'. Tekan 🖼 Gambar untuk unggah atau buat ilustrasi AI.'])}
   {let hil=false;teksSoal(s).forEach(x=>{let mm;const re=/\[gbr:([a-z0-9]+)\]/g;while((mm=re.exec(x)))if(!P.gambar[mm[1]])hil=true});if(hil)m.push(['b','Ada gambar yang tidak ditemukan di proyek. Pasang ulang gambarnya.'])}
   {const tb=[];teksSoal(s).forEach(x=>window.GASH.bagianTeks(x).forEach(({code,seg})=>{if(!code)window.GASH.potong(seg).forEach(it=>{if(it.tabel)tb.push(it.tabel)})}));
@@ -1042,6 +1085,20 @@ function masalah(s,row){
   return m;
 }
 const nomor=row=>P.kisi.indexOf(row)+1;
+/* ---------- kuota stimulus: aplikasi yang memilih butir boleh tabel/gambar ---------- */
+const RASIO_TABEL={Jarang:0.1,Sedang:0.2,Sering:0.34},RASIO_GAMBAR=0.1;
+function sebar(cand,k){const out=[];if(k<=0||!cand.length)return out;k=Math.min(k,cand.length);for(let i=0;i<k;i++)out.push(cand[Math.floor((i+0.5)*cand.length/k)]);return out}
+function kuota(n,r){return n<5?(r>=0.3?1:0):Math.max(1,Math.round(n*r))}
+function hitungIzin(){
+  const n=P.kisi.length;const tinggi=P.kisi.filter(r=>band(r.level)>=2),rendah=P.kisi.filter(r=>band(r.level)<2);
+  const pilih=(k,kecuali)=>{const a=tinggi.filter(r=>!kecuali.has(r.id)),b=rendah.filter(r=>!kecuali.has(r.id));const x=sebar(a,k);return x.concat(sebar(b,k-x.length))};
+  const tb=new Set(pilih(kuota(n,RASIO_TABEL[P.bp.tabel]||0.1),new Set()).map(r=>r.id));
+  const gb=new Set(pilih(kuota(n,RASIO_GAMBAR),tb).map(r=>r.id));
+  return {tabel:tb,gambar:gb};
+}
+function adaTabel(s){return teksSoal(s).some(x=>window.GASH.bagianTeks(x).some(({code,seg})=>!code&&window.GASH.potong(seg).some(it=>it.tabel)))}
+function tabelTakDiminta(s,row,iz){return !!(s&&s.aiTabel&&adaTabel(s)&&!(iz||hitungIzin()).tabel.has(row.id))}
+function gambarTakDiminta(s,row,iz){return !!(s&&s.aiGambar&&teksSoal(s).some(x=>RE_PH.test(x))&&!(iz||hitungIzin()).gambar.has(row.id))}
 
 /* ---------- render ---------- */
 let step=P.step||1,editId=null;
@@ -1124,6 +1181,7 @@ function v3(){
    <div class="grid" style="margin-top:12px">
     ${fld('bp.opsi','Jumlah opsi PG','',{opts:[4,5]})}
     ${fld('bp.bahasa','Bahasa soal','',{opts:['Indonesia','Inggris']})}
+    <div><label>Soal bertabel</label><select data-bind="bp.tabel">${[['Jarang','Jarang (±1 dari 10 soal)'],['Sedang','Sedang (±1 dari 5 soal)'],['Sering','Sering (±1 dari 3 soal)']].map(([v,t])=>`<option value="${v}" ${(bp.tabel||'Jarang')===v?'selected':''}>${t}</option>`).join('')}</select></div>
     <div><label>Level L1 C1–C2 (%)</label><input type="number" data-bind="bp.l1" value="${bp.l1}" inputmode="numeric"></div>
     <div><label>Level L2 C3 (%)</label><input type="number" data-bind="bp.l2" value="${bp.l2}" inputmode="numeric"></div>
     <div><label>Level L3 C4–C6 (%)</label><input type="number" data-bind="bp.l3" value="${bp.l3}" inputmode="numeric"></div>
@@ -1159,10 +1217,13 @@ function v4(){
   const belum=P.kisi.filter(r=>!P.soal[r.id]).length;
   let mb=0,mw=0;P.kisi.forEach(r=>{masalah(P.soal[r.id],r).forEach(x=>x[0]==='b'?mb++:mw++)});
   const dicek=P.kisi.filter(r=>P.soal[r.id]&&P.soal[r.id].cek).length;
+  const iz=hitungIzin();const nTabel=P.kisi.filter(r=>P.soal[r.id]&&adaTabel(P.soal[r.id])).length;
+  const langgar=P.kisi.filter(r=>tabelTakDiminta(P.soal[r.id],r,iz)||gambarTakDiminta(P.soal[r.id],r,iz));
   return `<div class="card"><h2>4. Soal</h2><p class="lead">AI menulis soal per butir kisi-kisi secara bertahap. Periksa setiap soal; jalankan <b>Cek keselarasan</b> agar AI menilai kesesuaian indikator, level, dan kunci.</p>
-   <div class="sum"><span class="chip ${belum?'':'ok'}">Jadi ${P.kisi.length-belum}/${P.kisi.length}</span><span class="chip ${mb?'bad':'ok'}">Masalah ${mb}</span>${mw?`<span class="chip warn">Perhatian ${mw}</span>`:''}<span class="chip">Sudah dicek ${dicek}</span></div>
+   <div class="sum"><span class="chip ${belum?'':'ok'}">Jadi ${P.kisi.length-belum}/${P.kisi.length}</span><span class="chip ${mb?'bad':'ok'}">Masalah ${mb}</span>${mw?`<span class="chip warn">Perhatian ${mw}</span>`:''}<span class="chip">Sudah dicek ${dicek}</span><span class="chip ${langgar.length?'warn':''}">Bertabel ${nTabel} (rencana ${iz.tabel.size})</span></div>
    <div class="row">${belum?`<button class="pri" data-act="genSisa">✨ ${belum===P.kisi.length?'Buat semua soal':'Lanjutkan '+belum+' soal yang belum'}</button>`:''}
    <button data-act="cekAll" ${P.kisi.length-belum?'':'disabled'}>🔍 Cek keselarasan</button>
+   ${langgar.length?`<button data-act="regenLanggar">↻ Buat ulang ${langgar.length} soal bertabel/bergambar yang tidak diminta</button>`:''}
    <button class="ghost sm" data-act="filterProb">${filterProb?'Tampilkan semua':'Hanya yang bermasalah'}</button></div>
   </div>
   ${P.kisi.map((r,i)=>{const s=P.soal[r.id];const m=masalah(s,r);if(filterProb&&!m.length&&s)return '';return scard(r,s,i,m)}).join('')}`;
@@ -1244,7 +1305,12 @@ function bukaPengaturan(){
    <div class="fld"><label>API key</label><div class="row"><input id="aiKey" type="password" class="sp" value="${esc(c.key)}" placeholder="${c.provider==='gemini'?'AIza...':'sk-or-...'}" autocomplete="off" style="width:auto"><button class="sm" data-act="lihatKey">👁</button></div></div>
    <div class="fld"><label>Model</label><div class="row"><input id="aiModel" class="sp" list="dlModel" value="${esc(c.model)}" style="width:auto"><button class="sm" data-act="muatModel">Muat daftar model</button></div><datalist id="dlModel">${modelList.map(m=>`<option value="${esc(m)}">`).join('')}</datalist></div>
    <div class="fld"><label>Model untuk Cek keselarasan (opsional; kosong = sama dengan model di atas)</label><input id="aiCekModel" list="dlModel" value="${esc(c.cekModel||'')}" placeholder="misal model yang lebih kuat bernalar"></div>
-   <div class="fld"><label>Model gambar (untuk Ilustrasi AI)</label><input id="aiImgModel" list="dlModel" value="${esc(c.imgModel||modelGambarDefault(c.provider))}"><div class="small muted">Harus model yang bisa membuat gambar; biasanya berbayar atau kuotanya terpisah.</div></div>
+   <details ${c.imgProv!=='sama'||c.imgModel?'open':''}><summary>🖼 Ilustrasi AI (model gambar)</summary>
+    <div class="fld" style="margin-top:8px"><label>Penyedia gambar</label><div class="seg">${[['sama','Sama dengan teks'],['gemini','Gemini'],['openrouter','OpenRouter']].map(([v,t])=>`<button data-act="imgProv" data-p="${v}" class="${c.imgProv===v?'on':''}">${t}</button>`).join('')}</div></div>
+    ${provGambar(c)!==c.provider?`<div class="fld"><label>API key ${provGambar(c)==='gemini'?'Gemini':'OpenRouter'} (khusus gambar)</label><input id="aiImgKey" type="password" value="${esc(c.imgKey||'')}" placeholder="${provGambar(c)==='gemini'?'AIza...':'sk-or-...'}" autocomplete="off"></div>`:''}
+    <div class="fld"><label>Model gambar</label><div class="row"><input id="aiImgModel" class="sp" list="dlImg" value="${esc(modelGambar(c))}" placeholder="tekan Cari model gambar" style="width:auto"><button class="sm" data-act="cariGbr">Cari model gambar</button></div><datalist id="dlImg"></datalist>
+    <div class="small muted" style="margin-top:4px">Model gambar biasanya berbayar atau kuotanya terpisah dari model teks.</div><div id="gbrStatus" class="note hidden"></div></div>
+   </details>
    <div class="grid"><div class="fld"><label>Soal per permintaan</label><input id="aiBatch" type="number" min="1" max="10" value="${c.batch}"></div><div class="fld"><label>Jeda antarpermintaan (detik)</label><input id="aiJeda" type="number" min="0" max="60" value="${c.jeda}"></div></div>
    <label style="display:flex;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" id="aiSimpan" ${c.simpan!==false?'checked':''}>Simpan key di perangkat ini (hapus centang untuk perangkat bersama)</label>
    <div id="aiStatus" class="note hidden"></div>
@@ -1253,7 +1319,7 @@ function bukaPengaturan(){
    <div class="small muted" style="margin:8px 0">Key hanya disimpan di browser ini dan dikirim langsung ke ${c.provider==='gemini'?'Google':'OpenRouter'}; tidak ikut ke file proyek.</div>
    <div class="row"><button class="ghost danger" data-act="hapusKey">Hapus key</button><span class="sp"></span><button data-act="tesAI">Tes koneksi</button><button class="pri" data-act="simpanAI">Simpan</button></div>`);
 }
-function bacaForm(){const c=aiCfg();c.key=$('#aiKey').value.trim();c.model=$('#aiModel').value.trim()||c.model;c.batch=Math.min(10,Math.max(1,parseInt($('#aiBatch').value)||5));c.jeda=Math.max(0,parseFloat($('#aiJeda').value)||0);c.simpan=$('#aiSimpan').checked;c.cekModel=$('#aiCekModel').value.trim();c.imgModel=$('#aiImgModel').value.trim();return c}
+function bacaForm(){const c=aiCfg();c.key=$('#aiKey').value.trim();c.model=$('#aiModel').value.trim()||c.model;c.batch=Math.min(10,Math.max(1,parseInt($('#aiBatch').value)||5));c.jeda=Math.max(0,parseFloat($('#aiJeda').value)||0);c.simpan=$('#aiSimpan').checked;c.cekModel=$('#aiCekModel').value.trim();c.imgModel=$('#aiImgModel').value.trim();if($('#aiImgKey'))c.imgKey=$('#aiImgKey').value.trim();return c}
 function aiStatus(t,cls){const e=$('#aiStatus');if(!e)return;e.className='note '+(cls||'');e.textContent=t}
 
 /* ---------- aksi ---------- */
@@ -1372,7 +1438,7 @@ function simpanEdit(card,s){
   }else if(s.tipe==='URT'){
     s.urutan=g('urt').value.split('\n').map(l=>l.trim()).filter(Boolean);
   }else{s.kunci=g('kunci').value.trim();if(s.tipe==='ESY')s.pedoman=g('pedoman').value.trim()}
-  s.cek=null;
+  s.cek=null;s.aiTabel=false;s.aiGambar=false;
 }
 function regenModal(id){
   const row=P.kisi.find(r=>r.id===id);
@@ -1409,7 +1475,16 @@ document.addEventListener('click',async e=>{
     case 'openFile':$('#fProj').click();break;
     case 'help':bantuan();break;
     case 'openSettings':bukaPengaturan();break;
-    case 'prov':{const c=bacaForm();c.provider=b.dataset.p;c.model=c.provider==='gemini'?'gemini-2.5-flash':'google/gemini-2.5-flash';c.cekModel='';c.imgModel='';modelList=[];aiSave(c);bukaPengaturan();badge();break}
+    case 'prov':{const c=bacaForm();c.provider=b.dataset.p;c.model=c.provider==='gemini'?'gemini-2.5-flash':'google/gemini-2.5-flash';c.cekModel='';if(c.imgProv==='sama')c.imgModel='';modelList=[];aiSave(c);bukaPengaturan();badge();break}
+    case 'imgProv':{const c=bacaForm();if(c.imgProv!==b.dataset.p){c.imgProv=b.dataset.p;c.imgModel=''}aiSave(c);bukaPengaturan();break}
+    case 'cariGbr':{const c=bacaForm();aiSave(c);const st=$('#gbrStatus');st.className='note';st.textContent='Mencari model gambar…';
+      try{const ip=provGambar(c);const list=await cariModelGambar(ip,keyGambar(c));
+        if(!list.length){st.className='note bad';st.textContent=ip==='gemini'?'Tidak ada model gambar yang tersedia untuk key ini. Biasanya model gambar Gemini perlu billing aktif. Coba penyedia gambar OpenRouter.':'Tidak ada model gambar yang ditemukan.';break}
+        $('#dlImg').innerHTML=list.map(m=>`<option value="${esc(m)}">`).join('');
+        const cur=$('#aiImgModel').value.trim();if(!list.includes(cur)){$('#aiImgModel').value=list[0]}
+        c.imgModel=$('#aiImgModel').value.trim();aiSave(c);
+        st.className='note';st.textContent=`${list.length} model gambar tersedia. Dipilih: ${c.imgModel}. Ketuk kolom Model gambar untuk memilih yang lain${ip==='openrouter'?' (harga per gambar lihat di openrouter.ai)':''}.`}
+      catch(err){st.className='note bad';st.textContent=err.message}break}
     case 'lihatKey':{const k=$('#aiKey');k.type=k.type==='password'?'text':'password';break}
     case 'muatModel':{const c=bacaForm();aiStatus('Memuat daftar model…');
       try{
@@ -1433,6 +1508,8 @@ document.addEventListener('click',async e=>{
     case 'kisiDel':if(confirm('Hapus butir ini (dan soalnya)?')){P.kisi=P.kisi.filter(r=>r.id!==kid);delete P.soal[kid];simpan();render()}break;
     case 'kisiMove':{const i=P.kisi.findIndex(r=>r.id===kid),j=i+(+b.dataset.d);if(j>=0&&j<P.kisi.length){[P.kisi[i],P.kisi[j]]=[P.kisi[j],P.kisi[i]];simpan();render()}break}
     case 'kisiSort':P.kisi.sort((x,y)=>URUT.indexOf(x.tipe)-URUT.indexOf(y.tipe));simpan();render();break;
+    case 'regenLanggar':{const iz=hitungIzin();const rows=P.kisi.filter(r=>tabelTakDiminta(P.soal[r.id],r,iz)||gambarTakDiminta(P.soal[r.id],r,iz));
+      if(rows.length&&confirm(`Buat ulang ${rows.length} soal? Soal lama akan diganti.`))genSoal(rows);break}
     case 'genSisa':genSoal(P.kisi.filter(r=>!P.soal[r.id]));break;
     case 'cekAll':cekSemua();break;
     case 'filterProb':filterProb=!filterProb;render();break;
