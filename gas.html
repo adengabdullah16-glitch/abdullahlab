@@ -1222,7 +1222,10 @@ function v4(){
   return `<div class="card"><h2>4. Soal</h2><p class="lead">AI menulis soal per butir kisi-kisi secara bertahap. Periksa setiap soal; jalankan <b>Cek keselarasan</b> agar AI menilai kesesuaian indikator, level, dan kunci.</p>
    <div class="sum"><span class="chip ${belum?'':'ok'}">Jadi ${P.kisi.length-belum}/${P.kisi.length}</span><span class="chip ${mb?'bad':'ok'}">Masalah ${mb}</span>${mw?`<span class="chip warn">Perhatian ${mw}</span>`:''}<span class="chip">Sudah dicek ${dicek}</span><span class="chip ${langgar.length?'warn':''}">Bertabel ${nTabel} (rencana ${iz.tabel.size})</span></div>
    <div class="row">${belum?`<button class="pri" data-act="genSisa">✨ ${belum===P.kisi.length?'Buat semua soal':'Lanjutkan '+belum+' soal yang belum'}</button>`:''}
-   <button data-act="cekAll" ${P.kisi.length-belum?'':'disabled'}>🔍 Cek keselarasan</button>
+   ${(()=>{const jadi=P.kisi.length-belum,blm=P.kisi.filter(r=>P.soal[r.id]&&!P.soal[r.id].cek).length;
+     if(!jadi)return '<button disabled>🔍 Cek keselarasan</button>';
+     if(blm)return `<button data-act="cekSisa">🔍 ${blm===jadi?'Cek keselarasan':'Lanjutkan cek ('+blm+' belum)'}</button>`+(blm<jadi?'<button class="ghost sm" data-act="cekAll">Cek ulang semua</button>':'');
+     return '<button disabled>🔍 Semua sudah dicek ✓</button><button class="ghost sm" data-act="cekAll">Cek ulang semua</button>'})()}
    ${langgar.length?`<button data-act="regenLanggar">↻ Buat ulang ${langgar.length} soal bertabel/bergambar yang tidak diminta</button>`:''}
    <button class="ghost sm" data-act="filterProb">${filterProb?'Tampilkan semua':'Hanya yang bermasalah'}</button></div>
   </div>
@@ -1235,7 +1238,7 @@ function scard(r,s,i,m){
   const prob=m.some(x=>x[0]==='b');
   return `<div class="scard ${prob?'prob':''}" data-soal="${r.id}">${head}${s?viewSoal(s):'<p class="muted small">Belum dibuat.</p>'}
    ${m.length?`<div class="issues">${m.map(x=>`<div class="issue ${x[0]==='w'?'w':''}">${esc(x[1])}${x[2]==='level'?` <button class="sm" data-act="pakaiLevel">Pakai ${esc(s.cek.level)} di kisi</button>`:''}</div>`).join('')}</div>`:(s&&s.cek?'<div class="issues"><div class="issue" style="background:var(--okbg);color:var(--ok)">✓ Lolos cek AI</div></div>':'')}
-   <div class="sact">${s?'<button class="sm" data-act="soalEdit">✏️ Edit</button>':''}${s?'<button class="sm" data-act="soalGambar">🖼 Gambar</button>':''}<button class="sm" data-act="soalRegen">✨ ${s?'Buat ulang':'Buat'}</button>${s?'<button class="sm ghost danger" data-act="soalDel">Hapus</button>':''}</div></div>`;
+   <div class="sact">${s?'<button class="sm" data-act="soalEdit">✏️ Edit</button>':''}${s?'<button class="sm" data-act="soalGambar">🖼 Gambar</button>':''}${s?`<button class="sm" data-act="cekSatu">🔍 ${s.cek?'Cek ulang':'Cek'}</button>`:''}<button class="sm" data-act="soalRegen">✨ ${s?'Buat ulang':'Buat'}</button>${s?'<button class="sm ghost danger" data-act="soalDel">Hapus</button>':''}</div></div>`;
 }
 function viewSoal(s){
   let h=`<div class="stem">${fmt(s.stem)}</div>`;
@@ -1406,14 +1409,18 @@ async function genSoal(rows,catatan){
   else if(done<rows.length)toast(`${done} soal dibuat; ${rows.length-done} terlewat. Tekan "Lanjutkan".`);
   else toast(`${done} soal selesai dibuat.`);
 }
-async function cekSemua(){
-  const list=P.kisi.map(row=>({row,s:P.soal[row.id]})).filter(x=>x.s);
-  if(!list.length)return;
+// mode: 'sisa' (hanya yang belum dicek), 'semua', atau id satu soal
+async function cekSemua(mode){
+  let list=P.kisi.map(row=>({row,s:P.soal[row.id]})).filter(x=>x.s);
+  if(mode==='sisa')list=list.filter(x=>!x.s.cek);
+  else if(mode&&mode!=='semua')list=list.filter(x=>x.row.id===mode);
+  if(!list.length){toast('Tidak ada soal yang perlu dicek.');return}
   const c=aiCfg();STOP=false;busy(true,'Memeriksa keselarasan…');let done=0,err=null;
   try{
     for(let i=0;i<list.length;i+=8){
       const part=list.slice(i,i+8);
       $('#busyProg').textContent=`${done}/${list.length} soal diperiksa`;
+      $('#busyText').textContent=`Memeriksa soal nomor ${part.map(x=>nomor(x.row)).join(', ')}…`;
       const out=await aiJSON(promptCek(part),'Cek keselarasan',{model:c.cekModel});
       arr(out&&out.hasil||out).forEach(h=>{const x=part.find(p=>p.row.id===String(h.id));if(x){x.s.cek={sesuai:h.sesuai!==false,level:h.level?normLevel(h.level):'',kunciBenar:h.kunciBenar!==false,catatan:str(h.catatan)};done++}});
       simpan();
@@ -1421,8 +1428,9 @@ async function cekSemua(){
     }
   }catch(e){err=e}
   finally{busy(false);render()}
-  if(err)pesan('Pemeriksaan terhenti',`${done} soal sudah diperiksa.<br>${esc(err.message)}`);
-  else toast(`${done} soal diperiksa.`);
+  const sisa=P.kisi.filter(r=>P.soal[r.id]&&!P.soal[r.id].cek).length;
+  if(err)pesan('Pemeriksaan terhenti',`${done} soal sudah diperiksa dan hasilnya tersimpan.<br>${esc(err.message)}${sisa?`<br><br>Sisa <b>${sisa} soal</b> belum dicek. Tekan <b>Lanjutkan cek</b> untuk meneruskan.`:''}`);
+  else toast(`${done} soal diperiksa.${sisa?' Sisa '+sisa+' belum dicek.':''}`);
 }
 function simpanEdit(card,s){
   const g=f=>card.querySelector(`[data-f="${f}"]`);
@@ -1511,7 +1519,9 @@ document.addEventListener('click',async e=>{
     case 'regenLanggar':{const iz=hitungIzin();const rows=P.kisi.filter(r=>tabelTakDiminta(P.soal[r.id],r,iz)||gambarTakDiminta(P.soal[r.id],r,iz));
       if(rows.length&&confirm(`Buat ulang ${rows.length} soal? Soal lama akan diganti.`))genSoal(rows);break}
     case 'genSisa':genSoal(P.kisi.filter(r=>!P.soal[r.id]));break;
-    case 'cekAll':cekSemua();break;
+    case 'cekAll':if(confirm('Periksa ulang SEMUA soal? Hasil cek sebelumnya akan diganti dan memakai kuota AI lagi.'))cekSemua('semua');break;
+    case 'cekSisa':cekSemua('sisa');break;
+    case 'cekSatu':cekSemua(sid);break;
     case 'filterProb':filterProb=!filterProb;render();break;
     case 'soalEdit':editId=sid;render();break;
     case 'soalBatal':editId=null;render();break;
