@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Absen Wajah – Prototipe</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1d2330; --muted:#6b7385; --line:#e3e6ec;
+    --accent:#1f6feb; --ok:#1a8f4c; --warn:#d97706; --bad:#d1343e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.45}
+  header{background:var(--ink);color:#fff;padding:14px 16px calc(10px) ;position:sticky;top:0;z-index:10}
+  header h1{font-size:18px;margin:0}
+  #modelStatus{font-size:13px;opacity:.85;margin-top:2px}
+  nav{display:flex;gap:4px;margin-top:10px;overflow-x:auto}
+  nav button{flex:1;min-width:76px;background:transparent;color:#cfd5e2;border:0;border-bottom:3px solid transparent;padding:8px 4px;font-size:15px;font-weight:600}
+  nav button.active{color:#fff;border-color:#58a6ff}
+  main{max-width:820px;margin:0 auto;padding:14px}
+  section{display:none} section.active{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .card h2{font-size:16px;margin:0 0 10px}
+  label{display:block;font-size:14px;color:var(--muted);margin:8px 0 4px}
+  input[type=text],input[type=date],textarea,select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  textarea{min-height:140px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-weight:600;padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.danger{color:var(--bad)}
+  .btn.small{padding:6px 10px;font-size:14px}
+  .btn:disabled{opacity:.5}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row > .grow{flex:1}
+  .muted{color:var(--muted);font-size:14px}
+  .list{list-style:none;margin:0;padding:0}
+  .list li{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .list li:last-child{border-bottom:0}
+  .list .name{flex:1;min-width:0}
+  .badge{font-size:12px;font-weight:700;padding:3px 8px;border-radius:99px;background:#eef1f6;color:var(--muted);white-space:nowrap}
+  .badge.ok{background:#e3f5ea;color:var(--ok)} .badge.warn{background:#fdf0dc;color:var(--warn)} .badge.bad{background:#fbe5e6;color:var(--bad)}
+  .status-sel{display:flex;gap:3px}
+  .status-sel button{width:36px;height:34px;border:1px solid var(--line);background:#fff;border-radius:6px;font-weight:700;color:var(--muted)}
+  .status-sel button.on[data-s=H]{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .status-sel button.on[data-s=S]{background:#7c5cd6;color:#fff;border-color:#7c5cd6}
+  .status-sel button.on[data-s=I]{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .status-sel button.on[data-s=A]{background:var(--bad);color:#fff;border-color:var(--bad)}
+  canvas.result{width:100%;height:auto;border-radius:8px;display:block;margin-top:10px;background:#000}
+  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-top:10px}
+  .summary div{background:#f2f4f8;border-radius:8px;padding:8px 2px}
+  .summary b{display:block;font-size:20px}
+  .summary span{font-size:12px;color:var(--muted)}
+  .enroll{background:#f7f9fc;border:1px dashed #b8c3d6;border-radius:10px;padding:12px;margin-top:10px}
+  .thumbs{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .thumbs canvas{width:64px;height:64px;border-radius:8px;object-fit:cover}
+  details summary{cursor:pointer;font-weight:600}
+  input[type=range]{width:100%}
+  .hidden{display:none!important}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d2330;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;max-width:90vw;opacity:0;transition:opacity .25s;pointer-events:none;z-index:50}
+  #toast.show{opacity:1}
+  .progress{font-size:14px;color:var(--accent);margin-top:8px}
+  .note{font-size:13px;color:var(--muted);background:#fffbea;border:1px solid #f3e3a1;border-radius:8px;padding:8px 10px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Absen Wajah <span style="font-weight:400;opacity:.7">· prototipe</span></h1>
+  <div id="modelStatus">Memuat model wajah…</div>
+  <nav>
+    <button data-tab="kelas" class="active">Kelas</button>
+    <button data-tab="daftar">Daftar Wajah</button>
+    <button data-tab="absen">Absen</button>
+    <button data-tab="rekap">Rekap</button>
+  </nav>
+</header>
+
+<main>
+  <!-- Pemilih kelas aktif (tampil di semua tab kecuali Kelas) -->
+  <div class="card" id="classPicker">
+    <div class="row">
+      <label style="margin:0" for="activeClass">Kelas aktif</label>
+      <select id="activeClass" class="grow"></select>
+    </div>
+  </div>
+
+  <!-- TAB KELAS -->
+  <section id="tab-kelas" class="active">
+    <div class="card">
+      <h2 id="kelasFormTitle">Tambah Kelas</h2>
+      <label for="kelasNama">Nama kelas</label>
+      <input type="text" id="kelasNama" placeholder="mis. X-1">
+      <label for="kelasSiswa">Daftar nama siswa (satu nama per baris, bisa ditempel dari Excel)</label>
+      <textarea id="kelasSiswa" placeholder="Ahmad Fauzi&#10;Bunga Lestari&#10;…"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" id="btnSimpanKelas">Simpan Kelas</button>
+        <button class="btn hidden" id="btnBatalEdit">Batal</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Daftar Kelas</h2>
+      <ul class="list" id="kelasList"></ul>
+    </div>
+    <p class="note">Data hanya tersimpan di browser perangkat ini. Foto siswa <b>tidak disimpan</b>, yang disimpan hanya kode angka wajah (descriptor). Lakukan ekspor cadangan di tab Rekap secara berkala.</p>
+  </section>
+
+  <!-- TAB DAFTAR WAJAH -->
+  <section id="tab-daftar">
+    <div class="card">
+      <h2>Pendaftaran Wajah</h2>
+      <p class="muted" id="daftarProgress"></p>
+      <p class="muted">Ketuk nama siswa, lalu ambil 3 foto close-up (wajah lurus, sedikit kiri, sedikit kanan). Cari tempat yang terang.</p>
+      <ul class="list" id="daftarList"></ul>
+    </div>
+  </section>
+
+  <!-- TAB ABSEN -->
+  <section id="tab-absen">
+    <div class="card">
+      <h2>Absen Foto Kelompok</h2>
+      <label for="absenTanggal">Tanggal</label>
+      <input type="date" id="absenTanggal">
+      <label for="absenKet">Keterangan (opsional)</label>
+      <input type="text" id="absenKet" placeholder="mis. Pertemuan 12 / jam ke-3">
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary grow" id="btnFotoKelompok">📷 Ambil Foto</button>
+        <button class="btn grow" id="btnGaleri">🖼️ Pilih dari Galeri</button>
+      </div>
+      <input type="file" id="fileKelompok" accept="image/*" capture="environment" class="hidden">
+      <input type="file" id="fileGaleri" accept="image/*" multiple class="hidden">
+      <div class="progress" id="absenProgress"></div>
+      <div class="summary" id="absenSummary">
+        <div><b id="sumWajah">0</b><span>wajah</span></div>
+        <div><b id="sumKenal">0</b><span>dikenali</span></div>
+        <div><b id="sumHadir">0</b><span>hadir</span></div>
+        <div><b id="sumBelum">0</b><span>belum</span></div>
+      </div>
+      <div id="absenCanvases"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <h2 class="grow" style="margin:0">Konfirmasi</h2>
+        <button class="btn small" id="btnSemuaHadir">Semua H</button>
+      </div>
+      <p class="muted">H = Hadir, S = Sakit, I = Izin, A = Alpa. Badge "wajah" berarti terdeteksi otomatis.</p>
+      <ul class="list" id="absenList"></ul>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary grow" id="btnSimpanAbsen">Simpan Absen</button>
+        <button class="btn danger" id="btnResetAbsen">Reset</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>Pengaturan deteksi</summary>
+        <label>Ambang kecocokan: <b id="valTh"></b> <span class="muted">(lebih kecil = lebih ketat, lebih sedikit salah kenal)</span></label>
+        <input type="range" id="setTh" min="0.35" max="0.65" step="0.01">
+        <label>Sensitivitas deteksi wajah: <b id="valConf"></b> <span class="muted">(lebih kecil = lebih banyak wajah tertangkap, tapi lebih banyak salah deteksi)</span></label>
+        <input type="range" id="setConf" min="0.2" max="0.7" step="0.05">
+        <label for="setGrid">Mode deteksi</label>
+        <select id="setGrid">
+          <option value="1">Cepat (seluruh foto sekaligus)</option>
+          <option value="2">Detail 2×2 (disarankan)</option>
+          <option value="3">Sangat detail 3×3 (lambat, untuk wajah kecil)</option>
+        </select>
+        <label for="setDim">Resolusi proses</label>
+        <select id="setDim">
+          <option value="1600">1600 px (lebih cepat)</option>
+          <option value="2000">2000 px (disarankan)</option>
+          <option value="2800">2800 px (lebih detail, lambat)</option>
+        </select>
+      </details>
+    </div>
+  </section>
+
+  <!-- TAB REKAP -->
+  <section id="tab-rekap">
+    <div class="card">
+      <div class="row">
+        <h2 class="grow" style="margin:0">Riwayat Absen</h2>
+        <button class="btn small" id="btnCsv">⬇️ CSV</button>
+      </div>
+      <ul class="list" id="rekapList" style="margin-top:8px"></ul>
+    </div>
+    <div class="card">
+      <h2>Cadangan Data</h2>
+      <p class="muted">Ekspor semua kelas, data wajah, dan riwayat absen ke file JSON. Impor untuk memulihkan atau memindahkan ke perangkat lain.</p>
+      <div class="row">
+        <button class="btn" id="btnExportJson">Ekspor JSON</button>
+        <button class="btn" id="btnImportJson">Impor JSON</button>
+        <input type="file" id="fileJson" accept="application/json,.json" class="hidden">
+      </div>
+    </div>
+  </section>
+</main>
+
+<input type="file" id="fileEnroll" accept="image/*" capture="user" class="hidden">
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js"></script>
+<script>
+"use strict";
+/* ========= Konfigurasi ========= */
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model/';
+const MAX_DESC_PER_STUDENT = 5;
+const STATUSES = ['H','S','I','A'];
+
+/* ========= State ========= */
+let state = {
+  classes: [],   // {id, name, students:[{id, name, descriptors:[[128 angka]]}]}
+  sessions: [],  // {id, classId, date, note, savedAt, records:{studentId:{s:'H', auto:bool, d:number|null}}}
+  settings: { threshold: 0.5, minConf: 0.4, grid: 2, maxDim: 2000 },
+  activeClassId: null
+};
+let modelsReady = false;
+let editingClassId = null;
+let enrollStudentId = null;
+let enrollThumbs = {};        // studentId -> [canvas] (hanya sementara, tidak disimpan)
+let current = newCurrent();   // sesi absen yang sedang berjalan
+
+function newCurrent(){ return { faces:0, recognized:0, auto:{}, status:{}, photos:0 }; }
+
+/* ========= Util ========= */
+const $ = s => document.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(msg, ms=2600){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms); }
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtDate(s){ const [y,m,d]=s.split('-'); return `${d}/${m}/${y}`; }
+function activeClass(){ return state.classes.find(c => c.id === state.activeClassId) || null; }
+function euclid(a,b){ let s=0; for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+=d*d; } return Math.sqrt(s); }
+function minDist(desc, student){ let m=Infinity; for(const sd of student.descriptors){ const d=euclid(desc, sd); if(d<m) m=d; } return m; }
+function download(name, text, type){ const b=new Blob([text],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},500); }
+function pickFile(input){ input.value=''; input.click(); }
+
+/* ========= Penyimpanan (IndexedDB) ========= */
+const DB = {
+  db:null,
+  open(){ return new Promise((res,rej)=>{ const r=indexedDB.open('absen-wajah',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>{this.db=r.result;res();}; r.onerror=()=>rej(r.error); }); },
+  get(k){ return new Promise((res,rej)=>{ const q=this.db.transaction('kv').objectStore('kv').get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); },
+  set(k,v){ return new Promise((res,rej)=>{ const tx=this.db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+};
+let storageOk = true;
+async function save(){
+  if(!storageOk) return;
+  try{ await DB.set('state', state); }
+  catch(e){ console.error(e); toast('Gagal menyimpan ke browser. Segera ekspor JSON.'); }
+}
+
+/* ========= Model ========= */
+async function loadModels(){
+  const st = $('#modelStatus');
+  try{
+    if(typeof faceapi === 'undefined') throw new Error('library tidak termuat (cek internet)');
+    await faceapi.tf.ready();
+    st.textContent = 'Memuat model wajah (±12 MB, sekali saja)…';
+    await Promise.all([
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+    ]);
+    // pemanasan agar proses pertama tidak terlalu lambat
+    const c=document.createElement('canvas'); c.width=c.height=64;
+    await faceapi.detectAllFaces(c, new faceapi.SsdMobilenetv1Options());
+    modelsReady = true;
+    st.textContent = '✅ Model siap · backend: ' + faceapi.tf.getBackend();
+  }catch(e){
+    console.error(e);
+    st.textContent = '⚠️ Gagal memuat model: ' + e.message;
+  }
+}
+function requireModel(){ if(!modelsReady){ toast('Model wajah belum siap, tunggu sebentar.'); return false; } return true; }
+
+/* ========= Pengolahan gambar ========= */
+async function fileToCanvas(file, maxDim){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('Gambar tidak bisa dibuka')); i.src=url; });
+    const s = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth*s); c.height = Math.round(img.naturalHeight*s);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function cropCanvas(src, x, y, w, h){
+  const c=document.createElement('canvas'); c.width=Math.round(w); c.height=Math.round(h);
+  c.getContext('2d').drawImage(src, x, y, w, h, 0, 0, c.width, c.height);
+  return c;
+}
+
+// Deteksi semua wajah. Foto dipecah menjadi beberapa potongan (tile) yang saling tumpang-tindih,
+// karena detektor memperkecil input ke 512 px sehingga wajah kecil di baris belakang bisa hilang.
+async function detectFaces(canvas, grid, minConf){
+  const opts = new faceapi.SsdMobilenetv1Options({ minConfidence:minConf, maxResults:150 });
+  const W=canvas.width, H=canvas.height;
+  const tiles=[{x:0,y:0,w:W,h:H}];
+  if(grid>1){
+    const ov=0.25;
+    const tw=W/(grid-(grid-1)*ov), th=H/(grid-(grid-1)*ov);
+    for(let r=0;r<grid;r++) for(let c=0;c<grid;c++){
+      tiles.push({ x:Math.round(c*tw*(1-ov)), y:Math.round(r*th*(1-ov)), w:Math.round(Math.min(tw, W-c*tw*(1-ov))), h:Math.round(Math.min(th, H-r*th*(1-ov))) });
+    }
+  }
+  const found=[];
+  for(const t of tiles){
+    const src = (t.w===W && t.h===H) ? canvas : cropCanvas(canvas, t.x, t.y, t.w, t.h);
+    const res = await faceapi.detectAllFaces(src, opts).withFaceLandmarks().withFaceDescriptors();
+    for(const r of res){
+      const b=r.detection.box;
+      found.push({ box:{x:b.x+t.x, y:b.y+t.y, w:b.width, h:b.height}, score:r.detection.score, descriptor:Array.from(r.descriptor) });
+    }
+  }
+  // gabungkan duplikat (wajah sama dari tile berbeda) – simpan kotak yang paling besar/utuh
+  found.sort((a,b)=> b.box.w*b.box.h - a.box.w*a.box.h);
+  const kept=[];
+  for(const f of found){
+    if(!kept.some(k => overlapMin(k.box, f.box) > 0.5)) kept.push(f);
+  }
+  return kept;
+}
+function overlapMin(a,b){
+  const ix=Math.max(0, Math.min(a.x+a.w, b.x+b.w)-Math.max(a.x,b.x));
+  const iy=Math.max(0, Math.min(a.y+a.h, b.y+b.h)-Math.max(a.y,b.y));
+  return (ix*iy)/Math.min(a.w*a.h, b.w*b.h);
+}
+
+// Cocokkan wajah ke siswa: pasangan dengan jarak terkecil didahulukan,
+// satu wajah = satu siswa, satu siswa = satu wajah.
+function matchFaces(faces, students, threshold){
+  const pairs=[];
+  faces.forEach((f,fi)=>{
+    for(const s of students){
+      if(!s.descriptors.length) continue;
+      const d=minDist(f.descriptor, s);
+      if(d<threshold) pairs.push({fi, sid:s.id, d});
+    }
+  });
+  pairs.sort((a,b)=>a.d-b.d);
+  const usedF=new Set(), usedS=new Set(), assign={};
+  for(const p of pairs){
+    if(usedF.has(p.fi)||usedS.has(p.sid)) continue;
+    usedF.add(p.fi); usedS.add(p.sid); assign[p.fi]=p;
+  }
+  return assign;
+}
+
+/* ========= Tab ========= */
+function showTab(name){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  document.querySelectorAll('main section').forEach(s=>s.classList.toggle('active', s.id==='tab-'+name));
+  $('#classPicker').classList.toggle('hidden', name==='kelas');
+  renderAll();
+}
+
+/* ========= Render ========= */
+function renderAll(){ renderClassSelect(); renderKelas(); renderDaftar(); renderAbsen(); renderRekap(); }
+
+function renderClassSelect(){
+  const sel=$('#activeClass');
+  if(!state.classes.length){ sel.innerHTML='<option value="">— belum ada kelas —</option>'; return; }
+  if(!activeClass()) state.activeClassId = state.classes[0].id;
+  sel.innerHTML = state.classes.map(c=>`<option value="${c.id}" ${c.id===state.activeClassId?'selected':''}>${esc(c.name)} (${c.students.length} siswa)</option>`).join('');
+}
+
+function renderKelas(){
+  const ul=$('#kelasList');
+  if(!state.classes.length){ ul.innerHTML='<li class="muted">Belum ada kelas. Tambahkan di atas.</li>'; return; }
+  ul.innerHTML = state.classes.map(c=>{
+    const reg=c.students.filter(s=>s.descriptors.length>=1).length;
+    return `<li>
+      <div class="name"><b>${esc(c.name)}</b><div class="muted">${c.students.length} siswa · ${reg} wajah terdaftar</div></div>
+      <button class="btn small" data-act="edit" data-id="${c.id}">Edit</button>
+      <button class="btn small danger" data-act="del" data-id="${c.id}">Hapus</button>
+    </li>`;
+  }).join('');
+}
+
+function renderDaftar(){
+  const c=activeClass(), ul=$('#daftarList');
+  if(!c){ ul.innerHTML='<li class="muted">Pilih atau buat kelas dulu.</li>'; $('#daftarProgress').textContent=''; return; }
+  const reg=c.students.filter(s=>s.descriptors.length>=3).length;
+  $('#daftarProgress').textContent = `${reg} dari ${c.students.length} siswa sudah lengkap (≥3 foto).`;
+  ul.innerHTML = c.students.map((s,i)=>{
+    const n=s.descriptors.length;
+    const cls = n>=3?'ok':(n>0?'warn':'');
+    const open = s.id===enrollStudentId;
+    return `<li style="flex-wrap:wrap">
+      <span class="muted" style="width:26px">${i+1}.</span>
+      <div class="name" data-act="open" data-id="${s.id}" style="cursor:pointer">${esc(s.name)}</div>
+      <span class="badge ${cls}">${n} foto</span>
+      ${open ? `<div class="enroll" style="flex-basis:100%">
+        <div class="row">
+          <button class="btn primary grow" data-act="shot" data-id="${s.id}" ${n>=MAX_DESC_PER_STUDENT?'disabled':''}>📷 Ambil Foto Wajah</button>
+          ${n?`<button class="btn small danger" data-act="clear" data-id="${s.id}">Hapus data wajah</button>`:''}
+        </div>
+        <div class="progress" id="enrollMsg"></div>
+        <div class="thumbs" id="enrollThumbs"></div>
+        <p class="muted" style="margin:8px 0 0">Maksimal ${MAX_DESC_PER_STUDENT} foto. Pratinjau wajah hanya tampil sementara, tidak disimpan.</p>
+      </div>`:''}
+    </li>`;
+  }).join('');
+  if(enrollStudentId){
+    const box=$('#enrollThumbs');
+    if(box) (enrollThumbs[enrollStudentId]||[]).forEach(cv=>box.appendChild(cv));
+  }
+}
+
+function renderAbsen(){
+  const c=activeClass(), ul=$('#absenList');
+  if(!$('#absenTanggal').value) $('#absenTanggal').value=todayStr();
+  const s=state.settings;
+  $('#setTh').value=s.threshold; $('#valTh').textContent=s.threshold.toFixed(2);
+  $('#setConf').value=s.minConf; $('#valConf').textContent=s.minConf.toFixed(2);
+  $('#setGrid').value=String(s.grid); $('#setDim').value=String(s.maxDim);
+  if(!c){ ul.innerHTML='<li class="muted">Pilih atau buat kelas dulu.</li>'; return; }
+  const hadir=c.students.filter(st=>current.status[st.id]==='H').length;
+  $('#sumWajah').textContent=current.faces;
+  $('#sumKenal').textContent=current.recognized;
+  $('#sumHadir').textContent=hadir;
+  $('#sumBelum').textContent=c.students.length-hadir;
+  ul.innerHTML = c.students.map((st,i)=>{
+    const sv=current.status[st.id]||'';
+    const a=current.auto[st.id];
+    return `<li>
+      <span class="muted" style="width:26px">${i+1}.</span>
+      <div class="name">${esc(st.name)}
+        <div>${a?`<span class="badge ok">wajah · ${a.d.toFixed(2)}</span>`:''}
+        ${!st.descriptors.length?'<span class="badge">belum daftar wajah</span>':''}</div>
+      </div>
+      <div class="status-sel">${STATUSES.map(x=>`<button data-act="st" data-id="${st.id}" data-s="${x}" class="${sv===x?'on':''}">${x}</button>`).join('')}</div>
+    </li>`;
+  }).join('');
+}
+
+function renderRekap(){
+  const c=activeClass(), ul=$('#rekapList');
+  if(!c){ ul.innerHTML='<li class="muted">Pilih atau buat kelas dulu.</li>'; return; }
+  const ses=state.sessions.filter(s=>s.classId===c.id).sort((a,b)=>(b.date+b.savedAt).localeCompare(a.date+a.savedAt));
+  if(!ses.length){ ul.innerHTML='<li class="muted">Belum ada absen tersimpan untuk kelas ini.</li>'; return; }
+  ul.innerHTML = ses.map(s=>{
+    const cnt={H:0,S:0,I:0,A:0}, auto=Object.values(s.records).filter(r=>r.auto).length;
+    Object.values(s.records).forEach(r=>cnt[r.s]=(cnt[r.s]||0)+1);
+    return `<li>
+      <div class="name"><b>${fmtDate(s.date)}</b> ${s.note?`<span class="muted">· ${esc(s.note)}</span>`:''}
+        <div class="muted">H ${cnt.H} · S ${cnt.S} · I ${cnt.I} · A ${cnt.A} · ${auto} via wajah</div></div>
+      <button class="btn small" data-act="load" data-id="${s.id}">Buka</button>
+      <button class="btn small danger" data-act="delses" data-id="${s.id}">Hapus</button>
+    </li>`;
+  }).join('');
+}
+
+/* ========= Aksi: Kelas ========= */
+async function saveClass(){
+  const name=$('#kelasNama').value.trim();
+  const names=$('#kelasSiswa').value.split(/\r?\n/).map(s=>s.replace(/\t.*/,'').trim()).filter(Boolean);
+  if(!name){ toast('Isi nama kelas.'); return; }
+  if(!names.length){ toast('Isi minimal satu nama siswa.'); return; }
+  const dup = names.find((n,i)=>names.findIndex(m=>m.toLowerCase()===n.toLowerCase())!==i);
+  if(dup){ toast(`Nama ganda: "${dup}". Beri pembeda, mis. inisial.`); return; }
+
+  if(editingClassId){
+    const c=state.classes.find(x=>x.id===editingClassId);
+    const byName=new Map(c.students.map(s=>[s.name.toLowerCase(), s]));
+    const removed=c.students.filter(s=>!names.some(n=>n.toLowerCase()===s.name.toLowerCase()));
+    const removedWithFace=removed.filter(s=>s.descriptors.length);
+    if(removedWithFace.length && !confirm(`${removedWithFace.length} siswa yang punya data wajah akan dihapus dari kelas:\n${removedWithFace.map(s=>s.name).join(', ')}\n\nLanjutkan?`)) return;
+    c.name=name;
+    c.students=names.map(n=>byName.get(n.toLowerCase()) || {id:uid(), name:n, descriptors:[]});
+    toast('Kelas diperbarui.');
+  } else {
+    const c={id:uid(), name, students:names.map(n=>({id:uid(), name:n, descriptors:[]}))};
+    state.classes.push(c); state.activeClassId=c.id;
+    toast(`Kelas ${name} dibuat (${names.length} siswa).`);
+  }
+  cancelEdit(); await save(); renderAll();
+}
+function cancelEdit(){
+  editingClassId=null; $('#kelasNama').value=''; $('#kelasSiswa').value='';
+  $('#kelasFormTitle').textContent='Tambah Kelas'; $('#btnBatalEdit').classList.add('hidden');
+}
+
+/* ========= Aksi: Daftar wajah ========= */
+async function enrollPhoto(file){
+  const c=activeClass(); const st=c && c.students.find(s=>s.id===enrollStudentId);
+  if(!st) return;
+  const msg=()=>$('#enrollMsg');
+  msg().textContent='Memproses foto…';
+  try{
+    const cv=await fileToCanvas(file, 1280);
+    const res=await faceapi.detectAllFaces(cv, new faceapi.SsdMobilenetv1Options({minConfidence:0.5})).withFaceLandmarks().withFaceDescriptors();
+    if(!res.length){ msg().textContent='❌ Wajah tidak terdeteksi. Dekatkan kamera dan cari tempat lebih terang.'; return; }
+    if(res.length>1) toast('Ada beberapa wajah, yang dipakai wajah terbesar.');
+    res.sort((a,b)=>b.detection.box.area-a.detection.box.area);
+    const r=res[0], desc=Array.from(r.descriptor);
+
+    // Cek konsistensi dengan foto sebelumnya milik siswa yang sama
+    if(st.descriptors.length){
+      const dSelf=minDist(desc, st);
+      if(dSelf>0.6 && !confirm(`Wajah ini cukup berbeda dari foto ${st.name} sebelumnya (jarak ${dSelf.toFixed(2)}). Yakin ini orang yang sama?`)){ msg().textContent='Dibatalkan.'; return; }
+    }
+    // Cek kemiripan dengan siswa lain (mencegah salah daftar)
+    let similar=null;
+    for(const cl of state.classes) for(const o of cl.students){
+      if(o.id===st.id || !o.descriptors.length) continue;
+      const d=minDist(desc,o); if(d<0.4 && (!similar||d<similar.d)) similar={o,cl,d};
+    }
+    if(similar && !confirm(`Wajah ini sangat mirip dengan ${similar.o.name} (${similar.cl.name}), jarak ${similar.d.toFixed(2)}. Tetap simpan untuk ${st.name}?`)){ msg().textContent='Dibatalkan.'; return; }
+
+    st.descriptors.push(desc);
+    const b=r.detection.box, pad=b.width*0.25;
+    const th=cropCanvas(cv, Math.max(0,b.x-pad), Math.max(0,b.y-pad), b.width+pad*2, b.height+pad*2);
+    (enrollThumbs[st.id] ||= []).push(th);
+    await save();
+    renderDaftar();
+    const m=msg(); if(m) m.textContent = st.descriptors.length>=3 ? `✅ ${st.descriptors.length} foto tersimpan. Lengkap!` : `✅ Tersimpan (${st.descriptors.length}/3). Ambil lagi dari sudut sedikit berbeda.`;
+  }catch(e){ console.error(e); msg().textContent='❌ Gagal: '+e.message; }
+}
+
+/* ========= Aksi: Absen ========= */
+async function processGroupPhotos(files){
+  const c=activeClass();
+  if(!c){ toast('Pilih kelas dulu.'); return; }
+  if(!c.students.some(s=>s.descriptors.length)){ toast('Belum ada siswa yang mendaftarkan wajah.'); return; }
+  const prog=$('#absenProgress');
+  const {threshold,minConf,grid,maxDim}=state.settings;
+  for(let i=0;i<files.length;i++){
+    current.photos++;
+    prog.textContent=`Memproses foto ${i+1}/${files.length}… (bisa beberapa detik)`;
+    await new Promise(r=>setTimeout(r,30)); // beri waktu UI memperbarui teks
+    try{
+      const t0=performance.now();
+      const cv=await fileToCanvas(files[i], maxDim);
+      const faces=await detectFaces(cv, grid, minConf);
+      const assign=matchFaces(faces, c.students, threshold);
+      let newly=0;
+      for(const p of Object.values(assign)){
+        const prev=current.auto[p.sid];
+        if(!prev){ newly++; current.auto[p.sid]={d:p.d}; }
+        else if(p.d<prev.d) prev.d=p.d;
+        current.status[p.sid]='H';
+      }
+      current.faces+=faces.length;
+      current.recognized+=Object.keys(assign).length;
+      drawResult(cv, faces, assign, c, current.photos);
+      prog.textContent=`Foto ${current.photos}: ${faces.length} wajah, ${Object.keys(assign).length} dikenali, ${newly} baru hadir · ${((performance.now()-t0)/1000).toFixed(1)} dtk`;
+    }catch(e){ console.error(e); prog.textContent='❌ Gagal memproses foto: '+e.message; }
+    renderAbsen();
+  }
+}
+
+function drawResult(cv, faces, assign, cls, no){
+  const out=document.createElement('canvas'); out.width=cv.width; out.height=cv.height; out.className='result';
+  const g=out.getContext('2d'); g.drawImage(cv,0,0);
+  const lw=Math.max(2, cv.width/450), fs=Math.max(14, Math.round(cv.width/70));
+  g.font=`600 ${fs}px -apple-system,sans-serif`; g.textBaseline='bottom';
+  faces.forEach((f,fi)=>{
+    const p=assign[fi], b=f.box;
+    let color='#d1343e', label='?';
+    if(p){ color='#1a8f4c'; const s=cls.students.find(x=>x.id===p.sid); label=s.name.split(' ')[0]+' '+p.d.toFixed(2); }
+    else if(b.w<60){ color='#d97706'; label='? kecil'; }
+    g.lineWidth=lw; g.strokeStyle=color; g.strokeRect(b.x,b.y,b.w,b.h);
+    const tw=g.measureText(label).width+fs*0.5;
+    const ty=Math.max(fs*1.25, b.y);
+    g.fillStyle=color; g.fillRect(b.x, ty-fs*1.25, tw, fs*1.25);
+    g.fillStyle='#fff'; g.fillText(label, b.x+fs*0.25, ty-fs*0.12);
+  });
+  const cap=document.createElement('p'); cap.className='muted'; cap.style.margin='10px 0 0';
+  cap.textContent=`Foto ${no} · hijau = dikenali, merah = tidak dikenali, oranye = wajah terlalu kecil`;
+  $('#absenCanvases').append(cap, out);
+}
+
+async function saveSession(){
+  const c=activeClass(); if(!c) return;
+  const date=$('#absenTanggal').value||todayStr();
+  const unset=c.students.filter(s=>!current.status[s.id]);
+  if(unset.length && !confirm(`${unset.length} siswa belum diberi status dan akan dicatat A (Alpa). Lanjutkan?`)) return;
+  const records={};
+  for(const s of c.students){
+    const a=current.auto[s.id];
+    records[s.id]={ s:current.status[s.id]||'A', auto:!!a && current.status[s.id]==='H', d:a?+a.d.toFixed(3):null };
+  }
+  const existing=state.sessions.find(x=>x.id===current.sessionId);
+  if(existing){ Object.assign(existing,{date, note:$('#absenKet').value.trim(), records, savedAt:new Date().toISOString()}); }
+  else state.sessions.push({ id:uid(), classId:c.id, date, note:$('#absenKet').value.trim(), savedAt:new Date().toISOString(), records });
+  await save();
+  toast('Absen tersimpan.');
+  resetSession(true);
+}
+function resetSession(silent){
+  if(!silent && Object.keys(current.status).length && !confirm('Hapus hasil absen yang belum disimpan?')) return;
+  current=newCurrent(); $('#absenCanvases').innerHTML=''; $('#absenProgress').textContent=''; $('#absenKet').value='';
+  $('#absenTanggal').value=todayStr(); renderAbsen();
+}
+function loadSession(id){
+  const s=state.sessions.find(x=>x.id===id); if(!s) return;
+  current=newCurrent(); current.sessionId=s.id;
+  for(const [sid,r] of Object.entries(s.records)){ current.status[sid]=r.s; if(r.auto) current.auto[sid]={d:r.d||0}; }
+  $('#absenCanvases').innerHTML=''; $('#absenProgress').textContent=`Mengedit absen ${fmtDate(s.date)}. Simpan untuk menimpa.`;
+  $('#absenTanggal').value=s.date; $('#absenKet').value=s.note||'';
+  showTab('absen');
+}
+
+/* ========= Ekspor ========= */
+function exportCsv(){
+  const c=activeClass(); if(!c) return;
+  const ses=state.sessions.filter(s=>s.classId===c.id).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!ses.length){ toast('Belum ada data absen.'); return; }
+  const q=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const head=['No','Nama',...ses.map(s=>fmtDate(s.date)+(s.note?' '+s.note:'')),'H','S','I','A'];
+  const rows=c.students.map((st,i)=>{
+    const cnt={H:0,S:0,I:0,A:0};
+    const cells=ses.map(s=>{ const r=s.records[st.id]; if(!r) return ''; cnt[r.s]++; return r.s; });
+    return [i+1, st.name, ...cells, cnt.H, cnt.S, cnt.I, cnt.A];
+  });
+  // pemisah titik koma agar langsung rapi di Excel berbahasa Indonesia
+  const csv='﻿'+[head,...rows].map(r=>r.map(q).join(';')).join('\r\n');
+  download(`absen_${c.name.replace(/\W+/g,'_')}_${todayStr()}.csv`, csv, 'text/csv;charset=utf-8');
+}
+function exportJson(){
+  download(`absen-wajah_cadangan_${todayStr()}.json`, JSON.stringify({app:'absen-wajah', version:1, exportedAt:new Date().toISOString(), state}), 'application/json');
+}
+async function importJson(file){
+  try{
+    const data=JSON.parse(await file.text());
+    const st=data.state||data;
+    if(!Array.isArray(st.classes)||!Array.isArray(st.sessions)) throw new Error('format tidak dikenal');
+    if(!confirm(`Impor akan MENGGANTI semua data di perangkat ini dengan ${st.classes.length} kelas dan ${st.sessions.length} sesi absen. Lanjutkan?`)) return;
+    state={...state, ...st, settings:{...state.settings, ...(st.settings||{})}};
+    await save(); resetSession(true); renderAll(); toast('Data berhasil diimpor.');
+  }catch(e){ toast('Impor gagal: '+e.message); }
+}
+
+/* ========= Event ========= */
+document.querySelector('nav').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) showTab(b.dataset.tab); });
+$('#activeClass').addEventListener('change', e=>{
+  if(Object.keys(current.status).length && !confirm('Ganti kelas akan menghapus hasil absen yang belum disimpan. Lanjutkan?')){ renderClassSelect(); return; }
+  state.activeClassId=e.target.value; enrollStudentId=null; resetSession(true); save(); renderAll();
+});
+$('#btnSimpanKelas').onclick=saveClass;
+$('#btnBatalEdit').onclick=cancelEdit;
+$('#kelasList').addEventListener('click', async e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  const c=state.classes.find(x=>x.id===b.dataset.id);
+  if(b.dataset.act==='edit'){
+    editingClassId=c.id; $('#kelasNama').value=c.name; $('#kelasSiswa').value=c.students.map(s=>s.name).join('\n');
+    $('#kelasFormTitle').textContent='Edit Kelas '+c.name; $('#btnBatalEdit').classList.remove('hidden');
+    window.scrollTo({top:0,behavior:'smooth'});
+  } else if(b.dataset.act==='del'){
+    if(!confirm(`Hapus kelas ${c.name} beserta data wajah dan semua riwayat absennya?`)) return;
+    state.classes=state.classes.filter(x=>x.id!==c.id);
+    state.sessions=state.sessions.filter(s=>s.classId!==c.id);
+    if(state.activeClassId===c.id) state.activeClassId=null;
+    await save(); renderAll();
+  }
+});
+$('#daftarList').addEventListener('click', async e=>{
+  const t=e.target.closest('[data-act]'); if(!t) return;
+  const act=t.dataset.act, id=t.dataset.id;
+  if(act==='open'){ enrollStudentId = enrollStudentId===id ? null : id; renderDaftar(); }
+  else if(act==='shot'){ if(requireModel()) pickFile($('#fileEnroll')); }
+  else if(act==='clear'){
+    const st=activeClass().students.find(s=>s.id===id);
+    if(!confirm(`Hapus semua data wajah ${st.name}?`)) return;
+    st.descriptors=[]; delete enrollThumbs[id]; await save(); renderDaftar();
+  }
+});
+$('#fileEnroll').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) enrollPhoto(f); });
+$('#btnFotoKelompok').onclick=()=>{ if(requireModel()) pickFile($('#fileKelompok')); };
+$('#btnGaleri').onclick=()=>{ if(requireModel()) pickFile($('#fileGaleri')); };
+$('#fileKelompok').addEventListener('change', e=>{ if(e.target.files.length) processGroupPhotos([...e.target.files]); });
+$('#fileGaleri').addEventListener('change', e=>{ if(e.target.files.length) processGroupPhotos([...e.target.files]); });
+$('#absenList').addEventListener('click', e=>{
+  const b=e.target.closest('button[data-act=st]'); if(!b) return;
+  const id=b.dataset.id;
+  current.status[id] = current.status[id]===b.dataset.s ? undefined : b.dataset.s;
+  if(!current.status[id]) delete current.status[id];
+  renderAbsen();
+});
+$('#btnSemuaHadir').onclick=()=>{ const c=activeClass(); if(!c) return; c.students.forEach(s=>{ if(!current.status[s.id]) current.status[s.id]='H'; }); renderAbsen(); };
+$('#btnSimpanAbsen').onclick=saveSession;
+$('#btnResetAbsen').onclick=()=>resetSession(false);
+$('#rekapList').addEventListener('click', async e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.act==='load') loadSession(b.dataset.id);
+  else if(b.dataset.act==='delses'){
+    if(!confirm('Hapus sesi absen ini?')) return;
+    state.sessions=state.sessions.filter(s=>s.id!==b.dataset.id); await save(); renderRekap();
+  }
+});
+$('#btnCsv').onclick=exportCsv;
+$('#btnExportJson').onclick=exportJson;
+$('#btnImportJson').onclick=()=>pickFile($('#fileJson'));
+$('#fileJson').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) importJson(f); });
+$('#setTh').oninput=e=>{ state.settings.threshold=+e.target.value; $('#valTh').textContent=(+e.target.value).toFixed(2); save(); };
+$('#setConf').oninput=e=>{ state.settings.minConf=+e.target.value; $('#valConf').textContent=(+e.target.value).toFixed(2); save(); };
+$('#setGrid').onchange=e=>{ state.settings.grid=+e.target.value; save(); };
+$('#setDim').onchange=e=>{ state.settings.maxDim=+e.target.value; save(); };
+
+/* ========= Mulai ========= */
+(async function init(){
+  try{
+    await DB.open();
+    const saved=await DB.get('state');
+    if(saved) state={...state, ...saved, settings:{...state.settings, ...(saved.settings||{})}};
+    if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+  }catch(e){
+    storageOk=false; console.error(e);
+    toast('Penyimpanan browser tidak tersedia (mode privat?). Data hilang saat halaman ditutup.', 5000);
+  }
+  $('#classPicker').classList.add('hidden');
+  renderAll();
+  loadModels();
+})();
+</script>
+</body>
+</html>
