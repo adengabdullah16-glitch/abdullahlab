@@ -58,6 +58,13 @@
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d2330;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;max-width:90vw;opacity:0;transition:opacity .25s;pointer-events:none;z-index:50}
   #toast.show{opacity:1}
   .progress{font-size:14px;color:var(--accent);margin-top:8px}
+  .vwrap{position:relative;margin-top:10px}
+  .vwrap video{width:100%;height:auto;display:block;border-radius:8px;background:#000}
+  .vwrap canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{background:#e3f5ea;color:var(--ok);font-size:13px;font-weight:600;padding:4px 10px;border-radius:99px;animation:pop .3s}
+  @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--ink);font-size:15px}
   .note{font-size:13px;color:var(--muted);background:#fffbea;border:1px solid #f3e3a1;border-radius:8px;padding:8px 10px}
 </style>
 </head>
@@ -111,6 +118,13 @@
       <p class="muted">Ketuk nama siswa, lalu ambil 3 foto close-up (wajah lurus, sedikit kiri, sedikit kanan). Cari tempat yang terang.</p>
       <ul class="list" id="daftarList"></ul>
     </div>
+    <div class="card">
+      <h2>Impor Pas Foto Massal</h2>
+      <p class="muted">Beri nama file sama dengan nama siswa, mis. <b>Ahmad Fauzi.jpg</b> atau <b>01 Ahmad Fauzi.jpg</b>. Di iPhone/iPad, simpan foto di app <b>File</b> lalu pilih "Pilih File". Foto dari app Foto biasanya berganti nama jadi IMG_xxxx sehingga tidak bisa dicocokkan.</p>
+      <button class="btn" id="btnBulk">📁 Pilih Pas Foto</button>
+      <input type="file" id="fileBulk" accept="image/*" multiple class="hidden">
+      <div class="progress" id="bulkMsg"></div>
+    </div>
   </section>
 
   <!-- TAB ABSEN -->
@@ -125,8 +139,18 @@
         <button class="btn primary grow" id="btnFotoKelompok">📷 Ambil Foto</button>
         <button class="btn grow" id="btnGaleri">🖼️ Pilih dari Galeri</button>
       </div>
+      <button class="btn grow" id="btnVideo" style="width:100%;margin-top:8px">🎥 Sapu Video (rekam pelan depan → belakang)</button>
       <input type="file" id="fileKelompok" accept="image/*" capture="environment" class="hidden">
       <input type="file" id="fileGaleri" accept="image/*" multiple class="hidden">
+      <div id="videoPanel" class="hidden">
+        <div class="vwrap"><video id="vid" playsinline muted autoplay></video><canvas id="vov"></canvas></div>
+        <div class="row" style="margin-top:8px">
+          <span id="vStat" class="grow muted">Menyalakan kamera…</span>
+          <button class="btn danger" id="btnStopVideo">⏹ Selesai</button>
+        </div>
+        <p class="muted" style="margin:6px 0 0">Gerakkan kamera pelan, berhenti 1–2 detik di tiap kelompok. Kuning = sedang dipastikan, hijau = tercatat hadir. Jangkauan video lebih pendek dari foto (±3–4 m), jadi berjalanlah ke tengah kelas untuk baris belakang.</p>
+        <div class="chips" id="vChips"></div>
+      </div>
       <div class="progress" id="absenProgress"></div>
       <div class="summary" id="absenSummary">
         <div><b id="sumWajah">0</b><span>wajah</span></div>
@@ -168,7 +192,11 @@
           <option value="1600">1600 px (lebih cepat)</option>
           <option value="2000">2000 px (disarankan)</option>
           <option value="2800">2800 px (lebih detail, lambat)</option>
+          <option value="6000">Resolusi penuh (jangkauan terjauh, paling lambat)</option>
         </select>
+        <p class="muted" style="margin:4px 0 0">Resolusi hanya berlaku untuk foto. Video selalu memakai resolusi kamera (maks. ±1080p).</p>
+        <label class="chk"><input type="checkbox" id="setLearn"> Belajar dari absen</label>
+        <p class="muted" style="margin:4px 0 0">Saat absen disimpan, wajah siswa yang dikenali dengan sangat yakin (jarak ≤ 0,42) ditambahkan ke datanya, maksimal 3 wajah terbaru. Akurasi naik seiring pertemuan.</p>
       </details>
     </div>
   </section>
@@ -195,6 +223,7 @@
 </main>
 
 <input type="file" id="fileEnroll" accept="image/*" capture="user" class="hidden">
+<input type="file" id="fileEnrollGal" accept="image/*" class="hidden">
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js"></script>
@@ -209,7 +238,7 @@ const STATUSES = ['H','S','I','A'];
 let state = {
   classes: [],   // {id, name, students:[{id, name, descriptors:[[128 angka]]}]}
   sessions: [],  // {id, classId, date, note, savedAt, records:{studentId:{s:'H', auto:bool, d:number|null}}}
-  settings: { threshold: 0.5, minConf: 0.4, grid: 2, maxDim: 2000 },
+  settings: { threshold: 0.5, minConf: 0.4, grid: 2, maxDim: 2000, learn: true },
   activeClassId: null
 };
 let modelsReady = false;
@@ -218,7 +247,13 @@ let enrollStudentId = null;
 let enrollThumbs = {};        // studentId -> [canvas] (hanya sementara, tidak disimpan)
 let current = newCurrent();   // sesi absen yang sedang berjalan
 
-function newCurrent(){ return { faces:0, recognized:0, auto:{}, status:{}, photos:0 }; }
+const MAX_LEARNED = 3;         // wajah hasil "belajar dari absen" per siswa
+const LEARN_MAX_DIST = 0.42;   // hanya wajah yang sangat yakin yang dipelajari
+const VIDEO_INTERVAL = 450;    // ms antar-proses frame (±2 kali per detik)
+const VIDEO_VOTES = 2;         // siswa dicatat hadir setelah dikenali di ≥2 frame
+
+function newCurrent(){ return { faces:0, recognized:0, auto:{}, status:{}, photos:0, learn:{} }; }
+function noteLearn(sid, d, desc){ const l=current.learn[sid]; if(!l || d<l.d) current.learn[sid]={d, desc}; }
 
 /* ========= Util ========= */
 const $ = s => document.querySelector(s);
@@ -229,7 +264,7 @@ function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.get
 function fmtDate(s){ const [y,m,d]=s.split('-'); return `${d}/${m}/${y}`; }
 function activeClass(){ return state.classes.find(c => c.id === state.activeClassId) || null; }
 function euclid(a,b){ let s=0; for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+=d*d; } return Math.sqrt(s); }
-function minDist(desc, student){ let m=Infinity; for(const sd of student.descriptors){ const d=euclid(desc, sd); if(d<m) m=d; } return m; }
+function minDist(desc, student){ let m=Infinity; for(const sd of student.descriptors.concat(student.learned||[])){ const d=euclid(desc, sd); if(d<m) m=d; } return m; }
 function download(name, text, type){ const b=new Blob([text],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},500); }
 function pickFile(input){ input.value=''; input.click(); }
 
@@ -348,6 +383,7 @@ function matchFaces(faces, students, threshold){
 
 /* ========= Tab ========= */
 function showTab(name){
+  if(name!=='absen') stopVideo();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   document.querySelectorAll('main section').forEach(s=>s.classList.toggle('active', s.id==='tab-'+name));
   $('#classPicker').classList.toggle('hidden', name==='kelas');
@@ -383,16 +419,17 @@ function renderDaftar(){
   const reg=c.students.filter(s=>s.descriptors.length>=3).length;
   $('#daftarProgress').textContent = `${reg} dari ${c.students.length} siswa sudah lengkap (≥3 foto).`;
   ul.innerHTML = c.students.map((s,i)=>{
-    const n=s.descriptors.length;
+    const n=s.descriptors.length, m=(s.learned||[]).length;
     const cls = n>=3?'ok':(n>0?'warn':'');
     const open = s.id===enrollStudentId;
     return `<li style="flex-wrap:wrap">
       <span class="muted" style="width:26px">${i+1}.</span>
       <div class="name" data-act="open" data-id="${s.id}" style="cursor:pointer">${esc(s.name)}</div>
-      <span class="badge ${cls}">${n} foto</span>
+      <span class="badge ${cls}">${n} foto${m?` +${m} belajar`:''}</span>
       ${open ? `<div class="enroll" style="flex-basis:100%">
         <div class="row">
-          <button class="btn primary grow" data-act="shot" data-id="${s.id}" ${n>=MAX_DESC_PER_STUDENT?'disabled':''}>📷 Ambil Foto Wajah</button>
+          <button class="btn primary grow" data-act="shot" data-id="${s.id}" ${n>=MAX_DESC_PER_STUDENT?'disabled':''}>📷 Kamera</button>
+          <button class="btn grow" data-act="gal" data-id="${s.id}" ${n>=MAX_DESC_PER_STUDENT?'disabled':''}>🖼️ Galeri / pas foto</button>
           ${n?`<button class="btn small danger" data-act="clear" data-id="${s.id}">Hapus data wajah</button>`:''}
         </div>
         <div class="progress" id="enrollMsg"></div>
@@ -413,7 +450,7 @@ function renderAbsen(){
   const s=state.settings;
   $('#setTh').value=s.threshold; $('#valTh').textContent=s.threshold.toFixed(2);
   $('#setConf').value=s.minConf; $('#valConf').textContent=s.minConf.toFixed(2);
-  $('#setGrid').value=String(s.grid); $('#setDim').value=String(s.maxDim);
+  $('#setGrid').value=String(s.grid); $('#setDim').value=String(s.maxDim); $('#setLearn').checked=!!s.learn;
   if(!c){ ul.innerHTML='<li class="muted">Pilih atau buat kelas dulu.</li>'; return; }
   const hadir=c.students.filter(st=>current.status[st.id]==='H').length;
   $('#sumWajah').textContent=current.faces;
@@ -536,6 +573,7 @@ async function processGroupPhotos(files){
       const assign=matchFaces(faces, c.students, threshold);
       let newly=0;
       for(const p of Object.values(assign)){
+        noteLearn(p.sid, p.d, faces[p.fi].descriptor);
         const prev=current.auto[p.sid];
         if(!prev){ newly++; current.auto[p.sid]={d:p.d}; }
         else if(p.d<prev.d) prev.d=p.d;
@@ -584,8 +622,20 @@ async function saveSession(){
   const existing=state.sessions.find(x=>x.id===current.sessionId);
   if(existing){ Object.assign(existing,{date, note:$('#absenKet').value.trim(), records, savedAt:new Date().toISOString()}); }
   else state.sessions.push({ id:uid(), classId:c.id, date, note:$('#absenKet').value.trim(), savedAt:new Date().toISOString(), records });
+  // Belajar dari absen: hanya siswa yang dikonfirmasi H oleh guru dan dikenali dengan sangat yakin
+  let learned=0;
+  if(state.settings.learn){
+    for(const [sid,l] of Object.entries(current.learn)){
+      const st=c.students.find(s=>s.id===sid);
+      if(!st || records[sid].s!=='H' || l.d>LEARN_MAX_DIST) continue;
+      st.learned ||= [];
+      st.learned.push(l.desc);
+      if(st.learned.length>MAX_LEARNED) st.learned.shift();
+      learned++;
+    }
+  }
   await save();
-  toast('Absen tersimpan.');
+  toast('Absen tersimpan.' + (learned?` ${learned} wajah dipelajari.`:''));
   resetSession(true);
 }
 function resetSession(silent){
@@ -600,6 +650,143 @@ function loadSession(id){
   $('#absenCanvases').innerHTML=''; $('#absenProgress').textContent=`Mengedit absen ${fmtDate(s.date)}. Simpan untuk menimpa.`;
   $('#absenTanggal').value=s.date; $('#absenKet').value=s.note||'';
   showTab('absen');
+}
+
+/* ========= Sapu Video ========= */
+const vstate = { stream:null, running:false, timer:null, hits:{}, frames:0, audio:null, wake:null, fc:document.createElement('canvas') };
+
+function beep(){
+  try{
+    const a=vstate.audio; if(!a) return;
+    const o=a.createOscillator(), g=a.createGain();
+    o.frequency.value=1046; g.gain.setValueAtTime(0.15,a.currentTime); g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.15);
+    o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime+0.16);
+  }catch(e){}
+}
+
+async function startVideo(){
+  if(!requireModel()) return;
+  const c=activeClass();
+  if(!c){ toast('Pilih kelas dulu.'); return; }
+  if(!c.students.some(s=>s.descriptors.length)){ toast('Belum ada siswa yang mendaftarkan wajah.'); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('Browser ini tidak mendukung kamera live (harus HTTPS).'); return; }
+  try{ vstate.audio = vstate.audio || new (window.AudioContext||window.webkitAudioContext)(); vstate.audio.resume(); }catch(e){}
+  try{
+    vstate.stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} } });
+  }catch(e){ toast('Kamera tidak bisa dibuka: '+e.message, 4000); return; }
+  const vid=$('#vid'); vid.srcObject=vstate.stream;
+  $('#videoPanel').classList.remove('hidden'); $('#btnVideo').classList.add('hidden'); $('#vChips').innerHTML='';
+  try{ await vid.play(); }catch(e){}
+  try{ if(navigator.wakeLock) vstate.wake = await navigator.wakeLock.request('screen'); }catch(e){}
+  vstate.running=true; vstate.hits={}; vstate.frames=0;
+  videoLoop();
+}
+
+async function videoLoop(){
+  if(!vstate.running) return;
+  const t0=performance.now();
+  const c=activeClass(), vid=$('#vid');
+  try{
+    const w=vid.videoWidth, h=vid.videoHeight;
+    if(w && h && c){
+      const fc=vstate.fc; if(fc.width!==w){ fc.width=w; fc.height=h; }
+      fc.getContext('2d').drawImage(vid,0,0,w,h);
+      const faces=await detectFaces(fc, Math.min(state.settings.grid,2), state.settings.minConf);
+      if(!vstate.running) return;
+      const assign=matchFaces(faces, c.students, state.settings.threshold);
+      vstate.frames++;
+      for(const p of Object.values(assign)){
+        const hit = vstate.hits[p.sid] ||= { n:0, best:Infinity };
+        hit.n++; if(p.d<hit.best) hit.best=p.d;
+        noteLearn(p.sid, p.d, faces[p.fi].descriptor);
+        if(current.auto[p.sid]){ if(p.d<current.auto[p.sid].d) current.auto[p.sid].d=p.d; }
+        else if(hit.n>=VIDEO_VOTES){
+          current.auto[p.sid]={d:hit.best}; current.status[p.sid]='H';
+          const st=c.students.find(s=>s.id===p.sid);
+          const chip=document.createElement('span'); chip.className='chip'; chip.textContent='✓ '+st.name;
+          $('#vChips').prepend(chip);
+          beep(); renderAbsen();
+        }
+      }
+      drawVideoOverlay(faces, assign, c, w, h);
+      const hadir=c.students.filter(s=>current.status[s.id]==='H').length;
+      $('#vStat').textContent=`${faces.length} wajah di layar · hadir ${hadir}/${c.students.length} · ${Math.round(performance.now()-t0)} ms/frame`;
+    }
+  }catch(e){ console.error(e); $('#vStat').textContent='⚠️ '+e.message; }
+  vstate.timer=setTimeout(videoLoop, Math.max(60, VIDEO_INTERVAL-(performance.now()-t0)));
+}
+
+function drawVideoOverlay(faces, assign, cls, w, h){
+  const ov=$('#vov'); if(ov.width!==w){ ov.width=w; ov.height=h; }
+  const g=ov.getContext('2d'); g.clearRect(0,0,w,h);
+  const lw=Math.max(2,w/320), fs=Math.max(16,Math.round(w/45));
+  g.font=`600 ${fs}px -apple-system,sans-serif`; g.textBaseline='bottom';
+  faces.forEach((f,fi)=>{
+    const p=assign[fi], b=f.box;
+    let color='rgba(209,52,62,.9)', label='?';
+    if(p){
+      const st=cls.students.find(x=>x.id===p.sid);
+      const ok=!!current.auto[p.sid];
+      color = ok ? 'rgba(26,143,76,.95)' : 'rgba(234,179,8,.95)';
+      label = st.name.split(' ')[0] + (ok?' ✓':' …');
+    }
+    g.lineWidth=lw; g.strokeStyle=color; g.strokeRect(b.x,b.y,b.w,b.h);
+    const tw=g.measureText(label).width+fs*0.5, ty=Math.max(fs*1.25,b.y);
+    g.fillStyle=color; g.fillRect(b.x,ty-fs*1.25,tw,fs*1.25);
+    g.fillStyle='#fff'; g.fillText(label,b.x+fs*0.25,ty-fs*0.12);
+  });
+}
+
+function stopVideo(){
+  if(!vstate.stream && !vstate.running) return;
+  vstate.running=false; clearTimeout(vstate.timer);
+  if(vstate.stream){ vstate.stream.getTracks().forEach(t=>t.stop()); vstate.stream=null; }
+  try{ vstate.wake && vstate.wake.release(); }catch(e){} vstate.wake=null;
+  $('#vid').srcObject=null; $('#videoPanel').classList.add('hidden'); $('#btnVideo').classList.remove('hidden');
+  const c=activeClass();
+  if(c){
+    const hadir=c.students.filter(s=>current.status[s.id]==='H').length;
+    $('#absenProgress').textContent=`Sapu video selesai: ${vstate.frames} frame diproses, ${hadir}/${c.students.length} hadir. Periksa daftar konfirmasi, lalu simpan.`;
+  }
+  renderAbsen();
+}
+
+/* ========= Impor pas foto massal ========= */
+function normName(s){ return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z]+/g,' ').trim(); }
+function findStudentByFile(fileName, students){
+  const base = normName(fileName.replace(/\.[^.]+$/,'').replace(/^[\d\s._-]+/,''));
+  if(!base) return null;
+  const exact = students.filter(s=>normName(s.name)===base);
+  if(exact.length===1) return exact[0];
+  if(base.length<4) return null;
+  const part = students.filter(s=>{ const n=normName(s.name); return n.includes(base) || base.includes(n); });
+  return part.length===1 ? part[0] : null;
+}
+async function bulkImport(files){
+  const c=activeClass(); if(!c){ toast('Pilih kelas dulu.'); return; }
+  const msg=$('#bulkMsg');
+  const ok=[], noMatch=[], noFace=[], full=[];
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    msg.textContent=`Memproses ${i+1}/${files.length}: ${f.name}`;
+    const st=findStudentByFile(f.name, c.students);
+    if(!st){ noMatch.push(f.name); continue; }
+    if(st.descriptors.length>=MAX_DESC_PER_STUDENT){ full.push(st.name); continue; }
+    try{
+      const cv=await fileToCanvas(f, 1280);
+      const res=await faceapi.detectAllFaces(cv, new faceapi.SsdMobilenetv1Options({minConfidence:0.5})).withFaceLandmarks().withFaceDescriptors();
+      if(!res.length){ noFace.push(f.name); continue; }
+      res.sort((a,b)=>b.detection.box.area-a.detection.box.area);
+      st.descriptors.push(Array.from(res[0].descriptor));
+      ok.push(st.name);
+    }catch(e){ console.error(e); noFace.push(f.name); }
+  }
+  await save(); renderDaftar();
+  const li=(arr)=>arr.map(esc).join(', ');
+  msg.innerHTML = `✅ ${ok.length} foto berhasil didaftarkan.`
+    + (noMatch.length?`<br>❓ Nama file tidak cocok dengan siswa (${noMatch.length}): ${li(noMatch)}`:'')
+    + (noFace.length?`<br>❌ Wajah tidak terdeteksi (${noFace.length}): ${li(noFace)}`:'')
+    + (full.length?`<br>⏭️ Dilewati, foto sudah penuh: ${li(full)}`:'');
 }
 
 /* ========= Ekspor ========= */
@@ -636,7 +823,7 @@ async function importJson(file){
 document.querySelector('nav').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) showTab(b.dataset.tab); });
 $('#activeClass').addEventListener('change', e=>{
   if(Object.keys(current.status).length && !confirm('Ganti kelas akan menghapus hasil absen yang belum disimpan. Lanjutkan?')){ renderClassSelect(); return; }
-  state.activeClassId=e.target.value; enrollStudentId=null; resetSession(true); save(); renderAll();
+  stopVideo(); state.activeClassId=e.target.value; enrollStudentId=null; resetSession(true); save(); renderAll();
 });
 $('#btnSimpanKelas').onclick=saveClass;
 $('#btnBatalEdit').onclick=cancelEdit;
@@ -660,13 +847,21 @@ $('#daftarList').addEventListener('click', async e=>{
   const act=t.dataset.act, id=t.dataset.id;
   if(act==='open'){ enrollStudentId = enrollStudentId===id ? null : id; renderDaftar(); }
   else if(act==='shot'){ if(requireModel()) pickFile($('#fileEnroll')); }
+  else if(act==='gal'){ if(requireModel()) pickFile($('#fileEnrollGal')); }
   else if(act==='clear'){
     const st=activeClass().students.find(s=>s.id===id);
     if(!confirm(`Hapus semua data wajah ${st.name}?`)) return;
-    st.descriptors=[]; delete enrollThumbs[id]; await save(); renderDaftar();
+    st.descriptors=[]; st.learned=[]; delete enrollThumbs[id]; await save(); renderDaftar();
   }
 });
 $('#fileEnroll').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) enrollPhoto(f); });
+$('#fileEnrollGal').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) enrollPhoto(f); });
+$('#btnBulk').onclick=()=>{ if(requireModel()) pickFile($('#fileBulk')); };
+$('#fileBulk').addEventListener('change', e=>{ if(e.target.files.length) bulkImport([...e.target.files]); });
+$('#btnVideo').onclick=startVideo;
+$('#btnStopVideo').onclick=stopVideo;
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) stopVideo(); });
+$('#setLearn').onchange=e=>{ state.settings.learn=e.target.checked; save(); };
 $('#btnFotoKelompok').onclick=()=>{ if(requireModel()) pickFile($('#fileKelompok')); };
 $('#btnGaleri').onclick=()=>{ if(requireModel()) pickFile($('#fileGaleri')); };
 $('#fileKelompok').addEventListener('change', e=>{ if(e.target.files.length) processGroupPhotos([...e.target.files]); });
