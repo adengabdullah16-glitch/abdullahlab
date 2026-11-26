@@ -35,6 +35,9 @@ h1{font-size:22px;margin:4px 0 0;text-align:center}
 .u{margin-left:auto;background:var(--accent);color:#fff}
 .a{background:light-dark(#eef6f4,#21403a)}
 .e{background:#fde2e1;color:#7a1414}
+/* disamarkan tanpa type=password, agar iOS tidak mengisi kata sandi otomatis */
+.rahasia{-webkit-text-security:disc;text-security:disc}
+.rahasia:focus{-webkit-text-security:none;text-security:none}
 .draf{border:2px solid var(--accent);max-width:92%}
 .draf .aksi{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .draf .aksi button{min-height:40px;font-size:15px}
@@ -112,12 +115,12 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
   <details id="set">
     <summary>Pengaturan</summary>
     <label for="key">OpenRouter API key</label>
-    <input id="key" type="password" placeholder="sk-or-… dari openrouter.ai/settings/keys">
+    <input id="key" class="rahasia" type="text" name="or-key-x" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="sk-or-… dari openrouter.ai/settings/keys">
     <label for="model">Model</label>
     <input id="model" value="openrouter/free">
     <p class="small">Biarkan <b>openrouter/free</b> agar OpenRouter memilih model gratis yang tersedia, atau tempel ID model berakhiran <b>:free</b>.</p>
     <label for="kode">Kode rahasia Supabase</label>
-    <input id="kode" type="password" autocomplete="off" placeholder="Kode yang Anda tulis di file SQL">
+    <input id="kode" class="rahasia" type="text" name="sb-kode-x" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="Kode yang Anda tulis di file SQL">
     <p class="small">Kode ini membuka ingatan bersama (HP &amp; iPad) dan data bot kesehatan. Kosongkan bila hanya ingin menyimpan di perangkat ini.</p>
     <p class="small"><b>Ganti mode dengan perintah</b> (ucapkan atau ketik): "mode pribadi", "mode santai", "mode tutor".
       Saat mode Tutor, perintah suara tidak bisa keluar dari Tutor (agar siswa tidak membuka mode pribadi);
@@ -133,6 +136,7 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
     <div class="row">
       <button type="button" id="simpan">Simpan</button>
       <button type="button" id="tes" class="alt">Tes suara</button>
+      <button type="button" id="cekKey" class="alt">Cek API key</button>
     </div>
     <p class="small">API key dan kode rahasia hanya disimpan di browser perangkat ini, tidak ada di kode halaman.</p>
   </details>
@@ -144,8 +148,8 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
 // Supabase URL & anon/publishable key (Project Settings → API).
 // Aman ditaruh di sini karena tabel hanya bisa diakses lewat fungsi yang
 // memeriksa kode rahasia. JANGAN isi service_role / secret key!
-const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -334,11 +338,22 @@ if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged =
 
 $('laju').oninput = () => $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('simpan').onclick = () => {
+  try { $('key').value = kunciOR(); } catch(e) { /* biarkan; pesan muncul saat dipakai */ }
   for (const k of ['key','model','nama','laju','kode']) simpanLS(k, $(k).value.trim());
   simpanLS('suara', $('suara').value); simpanLS('suaraEn', $('suaraEn').value);
   tampilJudul();
   status('Pengaturan disimpan'); $('set').open = false;
   muatSemua();
+};
+$('cekKey').onclick = async () => {
+  try {
+    const key = kunciOR();
+    status('Memeriksa API key…');
+    const res = await fetch('https://openrouter.ai/api/v1/key', {headers:{'Authorization':'Bearer ' + key}});
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) { $('key').value = key; simpanLS('key', key); status('✅ API key OpenRouter berlaku dan sudah disimpan' + (d.data?.label ? ' (' + d.data.label + ')' : '') + '.'); }
+    else status('❌ OpenRouter menolak key ini: ' + (d.error?.message || res.status) + '. Buat key baru di openrouter.ai/settings/keys.');
+  } catch(e) { status('❌ ' + e.message); }
 };
 $('tes').onclick = () => { bukaKunciSuara(); ucapkan('Halo, saya ' + ($('nama').value || 'asisten Anda') + '. Senang bertemu dengan Anda.', 'senang'); };
 
@@ -355,7 +370,7 @@ async function rpc(fn, args = {}){
   const t = await res.text();
   let d = null; try { d = t ? JSON.parse(t) : null; } catch(e) { d = t; }
   if (!res.ok) {
-    const m = d?.message || ('Supabase ' + res.status);
+    const m = 'Supabase: ' + (d?.message || res.status);
     throw new Error(/kode salah/i.test(m) ? 'Kode rahasia salah. Periksa di Pengaturan.' : m);
   }
   return d;
@@ -613,8 +628,7 @@ function urai(raw){
   return {ekspresi, jawaban: t, ingatan, lupa, catat};
 }
 async function tanyaAI(pesan){
-  const key = $('key').value.trim();
-  if (!key) throw new Error('API key belum diisi. Buka Pengaturan di bawah.');
+  const key = kunciOR();
   const model = $('model').value.trim() || 'openrouter/free';
   const sehat = await konteksKesehatan(pesan);
   if (sehat) status('Sedang berpikir…');
@@ -630,7 +644,8 @@ async function tanyaAI(pesan){
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      let msg = data.error?.message || ('Gagal menghubungi OpenRouter (' + res.status + ')');
+      let msg = 'OpenRouter: ' + (data.error?.message || ('gagal dihubungi (' + res.status + ')'));
+      if (res.status === 401) msg += ' — API key tidak terbaca atau tidak berlaku. Buka Pengaturan, tempel ulang key, lalu tekan "Cek API key".';
       if (res.status === 429) msg = 'Batas pemakaian model gratis tercapai. Tunggu sebentar atau coba model lain. (' + msg + ')';
       if (/data policy/i.test(msg)) msg += ' — Buka openrouter.ai/settings/privacy dan izinkan endpoint model gratis.';
       throw new Error(msg);
@@ -653,18 +668,26 @@ async function tanyaAI(pesan){
   return hasil;
 }
 
+// Membersihkan API key OpenRouter: buang spasi, baris baru, karakter tak terlihat, tanda kutip, dan awalan "Bearer"
+function kunciOR(){
+  const k = $('key').value.replace(/[\s​-‍﻿"'`]/g, '').replace(/^Bearer/i, '');
+  if (!k) throw new Error('API key OpenRouter belum diisi. Buka Pengaturan.');
+  if (!/^sk-or-/.test(k)) throw new Error('API key OpenRouter tidak dikenali (harus diawali "sk-or-"). Pastikan yang ditempel adalah key OpenRouter, bukan key Supabase atau Gemini.');
+  if (/[^\x21-\x7E]/.test(k)) throw new Error('API key OpenRouter mengandung karakter aneh. Salin ulang dari openrouter.ai/settings/keys.');
+  return k;
+}
+
 // ===== Mencatat makan & olahraga (ke data bot kesehatan) =====
 let draf = null;   // {data, sumber, el}
 async function panggilOR(messages, maxTokens = 3000){
-  const key = $('key').value.trim();
-  if (!key) throw new Error('API key belum diisi.');
+  const key = kunciOR();
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
     body: JSON.stringify({model: $('model').value.trim() || 'openrouter/free', messages, max_tokens: maxTokens, temperature: 0.2, reasoning: {effort:'low', exclude:true}})
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error) throw new Error(data.error?.message || ('OpenRouter ' + res.status));
+  if (!res.ok || data.error) throw new Error('OpenRouter: ' + (data.error?.message || res.status));
   let isi = data.choices?.[0]?.message?.content;
   if (Array.isArray(isi)) isi = isi.map(p => p.text || '').join('');
   return String(isi || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
