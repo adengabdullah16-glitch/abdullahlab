@@ -19,7 +19,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,
 main{max-width:680px;margin:0 auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
 h1{font-size:22px;margin:4px 0 0;text-align:center}
 #status{text-align:center;color:var(--muted);font-size:14px;min-height:21px}
-.wajah{display:block;width:min(66vw,280px);margin:6px auto 4px}
+.wajah{display:block;width:min(66vw,280px);margin:6px auto 4px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:filter 2s}
+.wajah.malam{filter:brightness(.82) saturate(.85)}
 #log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;height:32vh;overflow-y:auto}
 .msg{margin:6px 0;padding:8px 12px;border-radius:14px;max-width:85%;white-space:pre-wrap;overflow-wrap:anywhere}
 .u{margin-left:auto;background:var(--accent);color:#fff}
@@ -57,15 +58,20 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
         <stop id="w0" offset="0" stop-color="#ffc58f"/><stop id="w1" offset=".7" stop-color="#f6a25a"/><stop id="w2" offset="1" stop-color="#e4843a"/>
       </radialGradient>
     </defs>
-    <ellipse cx="100" cy="192" rx="58" ry="6" fill="#000" opacity=".12"/>
-    <circle cx="100" cy="100" r="86" fill="url(#g)"/>
-    <ellipse id="pipiL" cx="52" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
-    <ellipse id="pipiR" cx="148" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
-    <path id="alisL" d="M54 64 Q70 56 86 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
-    <path id="alisR" d="M114 64 Q130 56 146 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
-    <g id="mataL"><ellipse cx="70" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupL" cx="70" cy="88" r="7" fill="#22140a"/></g>
-    <g id="mataR"><ellipse cx="130" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupR" cx="130" cy="88" r="7" fill="#22140a"/></g>
-    <path id="mulut" d="" fill="#5a1f1a" stroke="#3b1410" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse id="bayang" cx="100" cy="192" rx="58" ry="6" fill="#000" opacity=".12"/>
+    <g id="kepala">
+      <circle cx="100" cy="100" r="86" fill="url(#g)"/>
+      <ellipse id="pipiL" cx="52" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
+      <ellipse id="pipiR" cx="148" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
+      <path id="alisL" d="M54 64 Q70 56 86 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <path id="alisR" d="M114 64 Q130 56 146 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <g id="mataL"><ellipse cx="70" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupL" cx="70" cy="88" r="7" fill="#22140a"/><circle id="kilauL" cx="73" cy="85" r="2.2" fill="#fff"/></g>
+      <g id="mataR"><ellipse cx="130" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupR" cx="130" cy="88" r="7" fill="#22140a"/><circle id="kilauR" cx="133" cy="85" r="2.2" fill="#fff"/></g>
+      <path id="mulut" d="" fill="#5a1f1a" stroke="#3b1410" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <g id="zzz" opacity="0" fill="var(--ink)" font-weight="700" font-family="system-ui,sans-serif">
+      <text x="150" y="40" font-size="16">z</text><text x="162" y="26" font-size="20">z</text><text x="176" y="12" font-size="24">Z</text>
+    </g>
   </svg>
 
   <div id="log" aria-live="polite"></div>
@@ -144,38 +150,136 @@ const EKS_AI = ['netral','senang','berpikir','bingung','sedih','kaget'];
 let eks = EKSPRESI.netral, buka = 0, target = 0, bicara = false, kedip = 1;
 
 // ===== Wajah =====
-function gambar(){
-  const y = 134, s = eks.smile, o = buka;
-  const lebar = 30 + (eks === EKSPRESI.kaget ? -10 : 0);
+const GERAK = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+let mataX = 0, mataY = 0, tujuanX = 0, tujuanY = 0, terakhirTunjuk = 0;
+let kantuk = 1;            // 1 segar, ~.45 mengantuk, .06 tidur
+let keadaan = 'segar';     // segar | ngantuk | tidur
+let menguapSejak = 0, lompatSejak = 0, terakhirAktif = Date.now(), uapBerikut = 0;
+let malam = false;
+
+function gambar(t){
+  // menguap: mulut terbuka pelan, mata hampir tertutup, alis naik
+  const uap = menguapSejak ? Math.min(1, (t - menguapSejak) / 2600) : 0;
+  const kuatUap = uap ? Math.sin(uap * Math.PI) : 0;
+  if (uap >= 1) menguapSejak = 0;
+
+  const y = 134, s = eks.smile * (1 - kuatUap), o = Math.max(buka, kuatUap * 1.1);
+  const lebar = 30 + (eks === EKSPRESI.kaget ? -10 : 0) - kuatUap * 12;
   const x1 = 100 - lebar, x2 = 100 + lebar, ujung = y - s*8;
-  const atas = y + s*6 - o*3, bawah = y + s*16 + o*26 + 3;
+  const atas = y + s*6 - o*3 - kuatUap*6, bawah = y + s*16 + o*26 + 3;
   $('mulut').setAttribute('d', `M${x1} ${ujung} Q100 ${atas} ${x2} ${ujung} Q100 ${bawah} ${x1} ${ujung} Z`);
-  const a = eks.alis, m = eks.alisMiring;
+
+  const a = eks.alis - kuatUap*6 + (keadaan === 'tidur' ? 4 : 0), m = eks.alisMiring;
   $('alisL').setAttribute('d', `M54 ${64+a+m} Q70 ${56+a} 86 ${64+a-m}`);
   $('alisR').setAttribute('d', `M114 ${64+a-m} Q130 ${56+a} 146 ${64+a+m}`);
-  const [lx, ly] = eks.lihat;
+
+  const lx = eks.lihat[0] + mataX, ly = eks.lihat[1] + mataY;
+  const tutup = Math.max(.06, Math.min(kedip, kantuk, 1 - kuatUap * .85));
   for (const [id, cx] of [['L',70],['R',130]]) {
     $('pup'+id).setAttribute('cx', cx + lx);
     $('pup'+id).setAttribute('cy', 88 + ly);
-    $('mata'+id).setAttribute('transform', `translate(0 ${86*(1-kedip)}) scale(1 ${kedip})`);
+    $('kilau'+id).setAttribute('cx', cx + 3 + lx*.8);
+    $('kilau'+id).setAttribute('cy', 85 + ly*.8);
+    $('mata'+id).setAttribute('transform', `translate(0 ${86*(1-tutup)}) scale(1 ${tutup})`);
   }
   const pipi = eks === EKSPRESI.senang ? .45 : .25;
   $('pipiL').setAttribute('opacity', pipi); $('pipiR').setAttribute('opacity', pipi);
+
+  // napas pelan + lompat saat disentuh
+  let dy = 0, sk = 1;
+  if (GERAK) {
+    sk = 1 + Math.sin(t / (keadaan === 'tidur' ? 1600 : 950)) * .012;
+    if (lompatSejak) {
+      const p = (t - lompatSejak) / 420;
+      if (p >= 1) lompatSejak = 0; else dy = -12 * Math.sin(p * Math.PI);
+    }
+  }
+  $('kepala').setAttribute('transform', `translate(100 ${100 + dy}) scale(${sk}) translate(-100 -100)`);
+  $('bayang').setAttribute('rx', 58 + dy * 1.2);
+  $('zzz').setAttribute('opacity', keadaan === 'tidur' ? (.45 + Math.sin(t / 700) * .35).toFixed(2) : 0);
+  if (keadaan === 'tidur' && GERAK) $('zzz').setAttribute('transform', `translate(0 ${Math.sin(t / 900) * 4})`);
 }
+
 function loop(t){
   if (bicara) {
     const osc = (Math.sin(t/70) + Math.sin(t/43)) * .25 + .45;
     target = Math.max(target * .9, osc * .7);
   } else target = 0;
   buka += (target - buka) * .35;
-  gambar();
+
+  const now = Date.now();
+  if (bicara || mendengar || sibuk) terakhirAktif = now;
+  const diam = now - terakhirAktif;
+  const batasNgantuk = malam ? 20000 : 45000, batasTidur = malam ? 90000 : 180000;
+  const baru = diam > batasTidur ? 'tidur' : diam > batasNgantuk ? 'ngantuk' : 'segar';
+  if (baru !== keadaan) {
+    keadaan = baru;
+    if (baru === 'tidur') { setEkspresi('netral'); status('Zzz… (sentuh wajah untuk membangunkan)'); }
+    if (baru === 'ngantuk') uapBerikut = now + 2000;
+  }
+  const tujuanKantuk = keadaan === 'tidur' ? .06 : keadaan === 'ngantuk' ? .45 : 1;
+  kantuk += (tujuanKantuk - kantuk) * .05;
+  if (keadaan === 'ngantuk' && now > uapBerikut && GERAK) { menguapSejak = t; uapBerikut = now + 15000 + Math.random()*12000; }
+
+  // ke mana mata melihat: jari/kursor, atau melirik acak saat diam
+  if (now - terakhirTunjuk > 3000) {
+    if (keadaan !== 'segar' || bicara) { tujuanX = 0; tujuanY = keadaan === 'tidur' ? 2 : 0; }
+    else if (Math.random() < .006) { tujuanX = (Math.random()*2 - 1) * 4; tujuanY = (Math.random()*2 - 1) * 2.5; }
+  }
+  mataX += (tujuanX - mataX) * .15; mataY += (tujuanY - mataY) * .15;
+  gambar(t);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 (function jadwalKedip(){
-  setTimeout(() => { kedip = .1; setTimeout(() => { kedip = 1; jadwalKedip(); }, 130); }, 2200 + Math.random()*3000);
+  setTimeout(() => {
+    if (keadaan !== 'tidur') { kedip = .1; setTimeout(() => { kedip = 1; jadwalKedip(); }, keadaan === 'ngantuk' ? 320 : 130); }
+    else jadwalKedip();
+  }, (keadaan === 'ngantuk' ? 1500 : 2200) + Math.random()*3000);
 })();
 function setEkspresi(n){ eks = EKSPRESI[n] || EKSPRESI.netral; }
+
+// Bangun / aktivitas pengguna
+function aktif(){
+  const dulu = keadaan;
+  terakhirAktif = Date.now();
+  if (dulu === 'tidur') {
+    baruBangun = Date.now(); keadaan = 'segar'; kantuk = .5; setEkspresi('kaget'); status('Eh, saya terbangun!');
+    setTimeout(() => { if (!bicara && !mendengar && !sibuk) setEkspresi('senang'); }, 700);
+    setTimeout(() => { if (!bicara && !mendengar && !sibuk) setEkspresi('netral'); }, 2200);
+  } else if (dulu === 'ngantuk') { keadaan = 'segar'; menguapSejak = 0; }
+}
+window.addEventListener('pointermove', e => {
+  const r = document.querySelector('.wajah').getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height * .44;
+  const nx = Math.max(-1, Math.min(1, (e.clientX - cx) / (innerWidth / 2)));
+  const ny = Math.max(-1, Math.min(1, (e.clientY - cy) / (innerHeight / 2)));
+  tujuanX = nx * 5; tujuanY = ny * 4; terakhirTunjuk = Date.now();
+  if (e.pointerType !== 'mouse' || keadaan !== 'tidur') terakhirAktif = Date.now();
+}, {passive:true});
+window.addEventListener('pointerdown', aktif, {passive:true});
+window.addEventListener('keydown', aktif);
+let sentuhan = [], baruBangun = 0;
+document.querySelector('.wajah').addEventListener('click', () => {
+  const tidur = keadaan === 'tidur';
+  aktif();
+  if (tidur || Date.now() - baruBangun < 800) return;
+  lompatSejak = performance.now();
+  const now = Date.now();
+  sentuhan = sentuhan.filter(x => now - x < 1500); sentuhan.push(now);
+  if (bicara || mendengar || sibuk) return;
+  const r = sentuhan.length >= 4 ? 'bingung' : sentuhan.length >= 2 ? 'senang' : (Math.random() < .5 ? 'kaget' : 'senang');
+  setEkspresi(r);
+  if (sentuhan.length >= 4) status('Hihi, geli!');
+  clearTimeout(window._balikEks);
+  window._balikEks = setTimeout(() => { if (!bicara && !mendengar && !sibuk) setEkspresi('netral'); }, 1400);
+});
+function cekMalam(){
+  const j = new Date().getHours();
+  malam = j >= 21 || j < 5;
+  document.querySelector('.wajah').classList.toggle('malam', malam);
+}
+cekMalam(); setInterval(cekMalam, 60000);
 
 // ===== Penyimpanan lokal =====
 const simpanLS = (k,v) => { try { localStorage.setItem('asw_'+k, v); } catch(e){} };
