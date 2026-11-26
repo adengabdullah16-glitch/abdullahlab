@@ -134,8 +134,8 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
 // ================== ISI DI SINI ==================
 // Supabase URL & anon key (Project Settings → API). Aman ditaruh di sini
 // selama RLS aktif. JANGAN isi service_role key!
-const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -389,8 +389,56 @@ function mulaiUcap(teks){
   setTimeout(() => { if (!bicara && speechSynthesis.pending) status('Suara tertahan. Ketuk "Tes suara" sekali, lalu coba lagi.'); }, 3000);
 }
 
+// ===== Data kesehatan (baca-saja dari bot makan) =====
+const KATA_SEHAT = /(makan|minum|kalori|kkal|protein|karbo|lemak|gizi|olahraga|lari|jalan kaki|senam|renang|defisit|surplus|target|sarapan|camilan|ngemil|asupan|berat badan|diet|kenyang|lapar)/i;
+const FAKTOR = {duduk:1.2, ringan:1.3, sedang:1.4};
+function kebutuhanDasar(p){
+  if (!p || !p.jk || !p.usia || !p.berat_kg || !p.tinggi_cm) return null;
+  const dasar = 10*p.berat_kg + 6.25*p.tinggi_cm - 5*p.usia + (p.jk === 'L' ? 5 : -161);
+  return Math.round(dasar * (FAKTOR[p.aktivitas] || 1.3) / 10) * 10;
+}
+const rg = (a, b) => { a = Math.round(a/10)*10; b = Math.round(b/10)*10; return a === b ? `${a}` : `${a}–${b}`; };
+function ringkasKesehatan(d){
+  const L = ['DATA CATATAN MAKAN & OLAHRAGA PENGGUNA (dari bot Telegram; semua angka kalori adalah perkiraan berupa rentang):'];
+  L.push('Waktu sekarang: ' + d.sekarang + ' WIB');
+  const kb = kebutuhanDasar(d.profil);
+  if (kb) L.push(`Kebutuhan dasar harian: ±${kb} kkal (di luar olahraga).`);
+  if (d.profil?.target_aktif) L.push(`Target aktif: ${d.profil.target_kkal ? d.profil.target_kkal + ' kkal' : '-'}, protein ${d.profil.target_protein ? d.profil.target_protein + ' g' : '-'}.`);
+  const cat = d.catatan || [];
+  if (!cat.length) { L.push('Belum ada catatan dalam 7 hari terakhir.'); return L.join('\n'); }
+  const hariIni = d.sekarang.slice(0, 10);
+  const perHari = {};
+  for (const c of cat) {
+    const h = perHari[c.tgl] ||= {mMin:0, mMaks:0, p:0, oMin:0, oMaks:0, n:0};
+    if (c.jenis === 'makan') { h.mMin += +c.kkal_min; h.mMaks += +c.kkal_maks; h.p += +c.protein_g; h.n++; }
+    else { h.oMin += +c.kkal_min; h.oMaks += +c.kkal_maks; }
+  }
+  const hi = cat.filter(c => c.tgl === hariIni);
+  L.push('', `Hari ini (${hariIni}):`);
+  if (!hi.length) L.push('- belum ada catatan');
+  for (const c of hi) L.push(`- ${c.jam} ${c.jenis}: ${c.deskripsi} — ${rg(c.kkal_min, c.kkal_maks)} kkal${c.jenis === 'makan' ? `, protein ±${c.protein_g} g` : ' terbakar'}`);
+  L.push('', '7 hari terakhir (total per hari):');
+  for (const [tgl, h] of Object.entries(perHari)) {
+    L.push(`- ${tgl}${tgl === hariIni ? ' (hari ini, belum selesai)' : ''}: masuk ${h.n ? rg(h.mMin, h.mMaks) + ' kkal, protein ±' + Math.round(h.p) + ' g' : 'tidak ada catatan makan'}${h.oMaks ? `, olahraga ${rg(h.oMin, h.oMaks)} kkal` : ''}`);
+  }
+  return L.join('\n');
+}
+async function konteksKesehatan(pesan){
+  if (!KATA_SEHAT.test(pesan)) return '';
+  if (!user) return 'CATATAN: data makan & olahraga tidak bisa dibaca karena pengguna belum masuk di panel "Sinkron Supabase". Sampaikan itu bila ia bertanya soal catatan makannya.';
+  status('Membaca catatan kesehatan…');
+  try {
+    const {data, error} = await sb.rpc('asisten_kesehatan', {p_hari: 7});
+    if (error) throw error;
+    return ringkasKesehatan(data);
+  } catch(e) {
+    status('Catatan kesehatan tidak terbaca: ' + e.message);
+    return 'CATATAN: data makan & olahraga gagal dibaca (' + e.message + '). Jangan mengarang angka; bilang datanya belum bisa diambil.';
+  }
+}
+
 // ===== Otak: OpenRouter =====
-function instruksi(){
+function instruksi(sehat = ''){
   const nama = $('nama').value || 'Asisten';
   const tahu = fakta.length ? '\n\nYang kamu ketahui tentang pengguna:\n' + fakta.map(f => '- ' + f.fakta).join('\n') : '';
   const sekarang = new Date().toLocaleString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'});
@@ -401,7 +449,10 @@ function instruksi(){
     `Jika pengguna menyampaikan fakta penting tentang dirinya yang berguna untuk percakapan berikutnya ` +
     `(nama, pekerjaan, keluarga, kebiasaan, preferensi, rencana), tambahkan di akhir: [ingat: fakta singkat sudut pandang orang ketiga]. ` +
     `Jangan mengulang fakta yang sudah diketahui. Jika pengguna meminta melupakan sesuatu, tambahkan [lupakan: kata kunci].\n` +
-    `Contoh: [senang] Salam kenal, Pak Ade! [ingat: Nama pengguna Pak Ade, guru SMA]` + tahu;
+    `Contoh: [senang] Salam kenal, Pak Ade! [ingat: Nama pengguna Pak Ade, guru SMA]` + tahu +
+    (sehat ? `\n\n${sehat}\n\nATURAN DATA KESEHATAN: untuk pertanyaan soal makan, kalori, atau olahraga, jawab HANYA berdasarkan data di atas. ` +
+      `Jangan mengarang catatan atau angka. Sebut angka sebagai perkiraan dan bulatkan. Kamu tidak bisa mencatat makanan; ` +
+      `bila pengguna ingin mencatat, arahkan ke bot Telegram-nya. Bukan saran medis. Jangan pakai [ingat:] untuk angka harian.` : '');
 }
 function urai(raw){
   let t = String(raw || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
@@ -418,7 +469,9 @@ async function tanyaAI(pesan){
   const key = $('key').value.trim();
   if (!key) throw new Error('API key belum diisi. Buka Pengaturan di bawah.');
   const model = $('model').value.trim() || 'openrouter/free';
-  const pesanKirim = [{role:'system', content:instruksi()}, ...riwayat.slice(-16), {role:'user', content:pesan}];
+  const sehat = await konteksKesehatan(pesan);
+  if (sehat) status('Sedang berpikir…');
+  const pesanKirim = [{role:'system', content:instruksi(sehat)}, ...riwayat.slice(-16), {role:'user', content:pesan}];
   let hasil = null, info = '';
   for (let coba = 1; coba <= 3 && !hasil; coba++) {
     if (coba > 1) status('Jawaban kosong, mencoba lagi (' + coba + '/3)…');
