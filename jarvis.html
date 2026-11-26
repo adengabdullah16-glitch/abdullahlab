@@ -2,489 +2,303 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0b1220">
-<title>Jarvis — Prototipe Tahap 1</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asisten Berwajah</title>
 <style>
-:root{--bg:#0b1220;--panel:#111a2e;--line:#1e2a44;--teks:#e6edf7;--redup:#8b9bb8;--aksen:#38bdf8;--nyala:#facc15;--merah:#f87171}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--teks);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
-body{min-height:100vh;min-height:100dvh}
-.wadah{max-width:560px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom))}
-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-h1{font-size:20px;margin:0;letter-spacing:.1em}
-h1 span{color:var(--aksen)}
-.mode{font-size:12px;color:var(--redup);margin-top:2px}
-.tombol-ikon{background:var(--panel);border:1px solid var(--line);color:var(--teks);border-radius:12px;width:44px;height:44px;font-size:20px;cursor:pointer}
-h3{font-size:12px;color:var(--redup);font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px}
-.perangkat{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px}
-.kartu{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;text-align:left;color:var(--teks);font:inherit;cursor:pointer;transition:border-color .2s,box-shadow .2s}
-.kartu .ikon{font-size:26px;filter:grayscale(1) opacity(.45);transition:filter .2s}
-.kartu .nama{font-weight:600;margin-top:6px}
-.kartu .status{font-size:13px;color:var(--redup)}
-.kartu.nyala{border-color:var(--nyala);box-shadow:0 0 18px rgba(250,204,21,.25)}
-.kartu.nyala .ikon{filter:none}
-.kartu.nyala .status{color:var(--nyala)}
-.mic-area{display:flex;flex-direction:column;align-items:center;gap:10px;margin:4px 0 18px}
-#tombolMic{width:120px;height:120px;border-radius:50%;border:2px solid var(--aksen);background:radial-gradient(circle,#0e2a3d,#0b1220);color:var(--aksen);font-size:44px;cursor:pointer}
-#tombolMic.rekam{border-color:var(--merah);color:var(--merah);animation:denyut 1.2s infinite}
-#tombolMic.proses{opacity:.55;cursor:wait}
-@keyframes denyut{0%{box-shadow:0 0 0 0 rgba(248,113,113,.5)}100%{box-shadow:0 0 0 24px rgba(248,113,113,0)}}
-#status{color:var(--redup);font-size:14px;min-height:20px;text-align:center}
-form.ketik{display:flex;gap:8px;margin-bottom:18px}
-form.ketik input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);color:var(--teks);border-radius:12px;padding:12px;font-size:16px}
-button.utama{background:var(--aksen);color:#04121c;border:0;border-radius:12px;padding:0 16px;font-weight:700;font-size:15px;cursor:pointer;min-height:44px}
-button:disabled{opacity:.5}
-.log{display:flex;flex-direction:column;gap:8px}
-.gelembung{padding:10px 12px;border-radius:14px;max-width:85%;font-size:15px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}
-.gelembung.saya{align-self:flex-end;background:#1d3557}
-.gelembung.jarvis{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
-.gelembung.galat{align-self:center;max-width:100%;color:var(--merah);font-size:13px;border:1px dashed var(--merah)}
-.gelembung small{display:block;color:var(--redup);font-size:11px;margin-top:4px}
-.panel{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;justify-content:center;z-index:10}
-.panel.buka{display:flex}
-.isi-panel{background:var(--panel);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom))}
-.isi-panel h2{margin:0 0 8px;font-size:18px}
-.isi-panel label{display:block;font-size:13px;color:var(--redup);margin:12px 0 4px}
-.isi-panel input[type=text],.isi-panel input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--teks);border-radius:10px;padding:11px;font-size:16px}
-.isi-panel label.cek{display:flex;align-items:center;gap:8px;color:var(--teks);font-size:14px;margin-top:14px}
-.catatan{font-size:12px;color:var(--redup);margin-top:12px;line-height:1.5}
-.baris{display:flex;gap:8px;margin-top:16px}
-.baris button{flex:1}
-.sekunder{background:transparent;border:1px solid var(--line);color:var(--teks);border-radius:12px;font-size:15px;cursor:pointer;min-height:44px}
+/* VOICE: ramah, tenang, seperti teman bicara
+   IDEA: wajah bulat yang hidup, berkedip, berekspresi, bicara
+   PICTURE: wajah SVG besar di atas, percakapan di bawahnya
+   COLOUR: hijau toska lembut, wajah oranye hangat, aksen tinta gelap
+   LAYOUT: satu kolom, nyaman di HP dan iPad */
+:root{color-scheme:light dark;
+  --bg:light-dark(#d9efe9,#10201d);--panel:light-dark(#ffffff,#18302b);
+  --ink:light-dark(#14211f,#e8f3f0);--muted:light-dark(#4d615d,#a9c2bc);
+  --face:#f6a25a;--face2:#e4843a;--line:light-dark(#c4ddd6,#2b4a43);--accent:#0d6e63}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif}
+main{max-width:680px;margin:0 auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+h1{font-size:22px;margin:4px 0 0;text-align:center}
+#status{text-align:center;color:var(--muted);font-size:14px;min-height:21px}
+.wajah{display:block;width:min(72vw,300px);margin:6px auto 4px}
+#log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;height:34vh;overflow-y:auto}
+.msg{margin:6px 0;padding:8px 12px;border-radius:14px;max-width:85%;white-space:pre-wrap;overflow-wrap:anywhere}
+.u{margin-left:auto;background:var(--accent);color:#fff}
+.a{background:light-dark(#eef6f4,#21403a)}
+.e{background:#fde2e1;color:#7a1414}
+form{display:flex;gap:8px;margin-top:10px}
+input,select,button{font:inherit;font-size:16px;border-radius:12px}
+input,select{flex:1;padding:10px 12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);width:100%}
+button{min-width:44px;min-height:44px;padding:0 14px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+button.alt{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+button.rec{background:#c0392b;color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f6a25a;outline-offset:2px}
+details{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+summary{cursor:pointer;font-weight:600}
+label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
+.small{font-size:13px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
-<div class="wadah">
-  <header>
-    <div>
-      <h1>J.A.R.V.I.S <span>•</span></h1>
-      <div class="mode" id="labelMode">Mode demo</div>
-    </div>
-    <button class="tombol-ikon" id="tombolSetelan" aria-label="Setelan">⚙️</button>
-  </header>
+<main>
+  <h1 id="judul">Jarvis</h1>
+  <div id="status">Ketuk 🎤 atau ketik pesan untuk mulai</div>
 
-  <h3>Perangkat (simulasi)</h3>
-  <div class="perangkat" id="daftarPerangkat"></div>
+  <svg class="wajah" viewBox="0 0 200 200" aria-label="Wajah asisten">
+    <defs>
+      <radialGradient id="g" cx="40%" cy="35%" r="70%">
+        <stop offset="0" stop-color="#ffc58f"/><stop offset=".7" stop-color="var(--face)"/><stop offset="1" stop-color="var(--face2)"/>
+      </radialGradient>
+    </defs>
+    <ellipse cx="100" cy="192" rx="58" ry="6" fill="#000" opacity=".12"/>
+    <circle cx="100" cy="100" r="86" fill="url(#g)"/>
+    <ellipse id="pipiL" cx="52" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
+    <ellipse id="pipiR" cx="148" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
+    <path id="alisL" d="M54 64 Q70 56 86 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path id="alisR" d="M114 64 Q130 56 146 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <g id="mataL"><ellipse cx="70" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupL" cx="70" cy="88" r="7" fill="#22140a"/></g>
+    <g id="mataR"><ellipse cx="130" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupR" cx="130" cy="88" r="7" fill="#22140a"/></g>
+    <path id="mulut" d="" fill="#5a1f1a" stroke="#3b1410" stroke-width="3" stroke-linejoin="round"/>
+  </svg>
 
-  <div class="mic-area">
-    <button id="tombolMic" aria-label="Bicara">🎙️</button>
-    <div id="status">Ketuk mikrofon lalu bicara</div>
-  </div>
+  <div id="log" aria-live="polite"></div>
 
-  <form class="ketik" id="formKetik">
-    <input id="inputTeks" type="text" placeholder="Atau ketik perintah…" autocomplete="off" enterkeyhint="send">
-    <button class="utama" type="submit" id="tombolKirim">Kirim</button>
+  <form id="f">
+    <button type="button" id="mic" class="alt" aria-label="Bicara">🎤</button>
+    <input id="teks" autocomplete="off" placeholder="Tulis pesan…">
+    <button id="kirim">Kirim</button>
   </form>
 
-  <h3>Percakapan</h3>
-  <div class="log" id="log"></div>
-</div>
-
-<div class="panel" id="panelSetelan">
-  <div class="isi-panel">
-    <h2>Setelan</h2>
-    <label for="setUrl">URL Edge Function</label>
-    <input id="setUrl" type="text" placeholder="https://xxxx.supabase.co/functions/v1/jarvis" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <label for="setToken">Token Jarvis</label>
-    <input id="setToken" type="password" placeholder="sama dengan secret JARVIS_TOKEN" autocomplete="off">
-    <label class="cek"><input id="setSuara" type="checkbox"> Bacakan jawaban dengan suara</label>
-    <div class="catatan">
-      Kosongkan URL untuk <b>mode demo</b>: perintah ketik diproses di perangkat tanpa AI, dan mikrofon belum aktif.<br>
-      Setelan hanya tersimpan di browser ini.
-    </div>
-    <div class="baris">
-      <button class="sekunder" id="tombolReset" type="button">Matikan semua</button>
-      <button class="utama" id="tombolSimpan" type="button">Simpan</button>
-    </div>
-  </div>
-</div>
+  <details id="set">
+    <summary>Pengaturan</summary>
+    <label for="key">OpenRouter API key</label>
+    <input id="key" type="password" placeholder="sk-or-… dari openrouter.ai/settings/keys">
+    <label for="model">Model</label>
+    <input id="model" value="openrouter/free" list="modelList">
+    <datalist id="modelList">
+      <option value="openrouter/free">Otomatis pilih model gratis</option>
+    </datalist>
+    <p class="small">Biarkan <b>openrouter/free</b> agar OpenRouter memilih model gratis yang sedang tersedia. Atau tempel ID model tertentu yang berakhiran <b>:free</b> dari openrouter.ai/models.</p>
+    <label for="nama">Nama asisten</label>
+    <input id="nama" value="Jarvis">
+    <label for="suara">Suara</label>
+    <select id="suara"></select>
+    <label for="laju">Kecepatan bicara: <span id="lajuV">1.0</span></label>
+    <input id="laju" type="range" min="0.6" max="1.4" step="0.1" value="1">
+    <p style="margin-top:12px"><button type="button" id="simpan">Simpan</button>
+      <button type="button" id="tes" class="alt">Tes suara</button>
+      <button type="button" id="hapus" class="alt">Hapus obrolan</button></p>
+    <p class="small">API key hanya disimpan di browser perangkat ini (localStorage), tidak ada di kode halaman. Jangan bagikan perangkat/halaman yang sudah berisi key Anda.</p>
+  </details>
+</main>
 
 <script>
-(function () {
-  'use strict';
+{
+const $ = id => document.getElementById(id);
+const EKSPRESI = {
+  netral:  {smile:.35, alis:0,   alisMiring:0,  lihat:[0,0]},
+  senang:  {smile:1,   alis:-5,  alisMiring:0,  lihat:[0,0]},
+  berpikir:{smile:0,   alis:-3,  alisMiring:6,  lihat:[4,-5]},
+  bingung: {smile:-.3, alis:0,   alisMiring:-7, lihat:[-3,0]},
+  sedih:   {smile:-.8, alis:3,   alisMiring:-5, lihat:[0,4]},
+  kaget:   {smile:0,   alis:-9,  alisMiring:0,  lihat:[0,0]}
+};
+let eks = EKSPRESI.netral, buka = 0, target = 0, bicara = false, kedip = 1;
 
-  // ===== Daftar perangkat simulasi (satu-satunya sumber; server mengikuti daftar ini) =====
-  const PERANGKAT = [
-    { id: 'lampu_teras', nama: 'Lampu Teras', ikon: '💡' },
-    { id: 'lampu_kamar', nama: 'Lampu Kamar', ikon: '💡' },
-    { id: 'kipas',       nama: 'Kipas Angin', ikon: '🌀' },
-    { id: 'pompa_kebun', nama: 'Pompa Kebun', ikon: '💧' },
-  ];
-  const BATAS_REKAM_DETIK = 15;
-  const SR_TUJUAN = 16000; // 16 kHz mono, cukup untuk suara
-
-  // ===== Penyimpanan (aman bila localStorage diblokir) =====
-  function baca(k, def) {
-    try { const v = localStorage.getItem('jarvis_' + k); return v === null ? def : JSON.parse(v); }
-    catch (e) { return def; }
+// ===== Wajah =====
+function gambar(){
+  // mulut
+  const y = 134, s = eks.smile, o = buka;
+  const lebar = 30 + (eks === EKSPRESI.kaget ? -10 : 0);
+  const x1 = 100 - lebar, x2 = 100 + lebar;
+  const ujung = y - s*8;
+  const atas = y + s*6 - o*3;
+  const bawah = y + s*16 + o*26 + 3;
+  $('mulut').setAttribute('d', `M${x1} ${ujung} Q100 ${atas} ${x2} ${ujung} Q100 ${bawah} ${x1} ${ujung} Z`);
+  // alis
+  const a = eks.alis, m = eks.alisMiring;
+  $('alisL').setAttribute('d', `M54 ${64+a+m} Q70 ${56+a} 86 ${64+a-m}`);
+  $('alisR').setAttribute('d', `M114 ${64+a-m} Q130 ${56+a} 146 ${64+a+m}`);
+  // mata & pupil
+  const [lx, ly] = eks.lihat;
+  for (const [id, cx] of [['L',70],['R',130]]) {
+    $('pup'+id).setAttribute('cx', cx + lx);
+    $('pup'+id).setAttribute('cy', 88 + ly);
+    $('mata'+id).setAttribute('transform', `translate(0 ${86*(1-kedip)}) scale(1 ${kedip})`);
   }
-  function tulis(k, v) { try { localStorage.setItem('jarvis_' + k, JSON.stringify(v)); } catch (e) {} }
-
-  const setelan = Object.assign({ url: '', token: '', suara: true }, baca('setelan', {}));
-  const status = Object.assign({}, baca('status', {}));
-  PERANGKAT.forEach(p => { if (typeof status[p.id] !== 'boolean') status[p.id] = false; });
-
-  const $ = id => document.getElementById(id);
-  const el = {
-    daftar: $('daftarPerangkat'), mic: $('tombolMic'), status: $('status'), log: $('log'),
-    form: $('formKetik'), input: $('inputTeks'), kirim: $('tombolKirim'), mode: $('labelMode'),
-    panel: $('panelSetelan'), setUrl: $('setUrl'), setToken: $('setToken'), setSuara: $('setSuara'),
-  };
-
-  const modeServer = () => !!setelan.url;
-  const namaDari = id => (PERANGKAT.find(p => p.id === id) || { nama: id }).nama;
-
-  // ===== Tampilan =====
-  function renderPerangkat() {
-    el.daftar.innerHTML = '';
-    PERANGKAT.forEach(p => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'kartu' + (status[p.id] ? ' nyala' : '');
-      b.innerHTML = '<div class="ikon"></div><div class="nama"></div><div class="status"></div>';
-      b.querySelector('.ikon').textContent = p.ikon;
-      b.querySelector('.nama').textContent = p.nama;
-      b.querySelector('.status').textContent = status[p.id] ? 'Menyala' : 'Mati';
-      b.onclick = () => { terapkanAksi([{ perangkat: p.id, nyala: !status[p.id] }]); };
-      el.daftar.appendChild(b);
-    });
-  }
-  function renderMode() {
-    el.mode.textContent = modeServer() ? 'Terhubung ke server (Gemini)' : 'Mode demo (tanpa AI)';
-  }
-  function setStatus(t) { el.status.textContent = t; }
-  function tambahLog(jenis, teks, kecil) {
-    const d = document.createElement('div');
-    d.className = 'gelembung ' + jenis;
-    d.textContent = teks;
-    if (kecil) { const s = document.createElement('small'); s.textContent = kecil; d.appendChild(s); }
-    el.log.prepend(d);
-    while (el.log.children.length > 40) el.log.lastChild.remove();
-  }
-
-  let sibuk = false;
-  function setSibuk(v, teks) {
-    sibuk = v;
-    el.mic.classList.toggle('proses', v);
-    el.kirim.disabled = v;
-    if (teks) setStatus(teks);
-    if (!v) setStatus('Ketuk mikrofon lalu bicara');
-  }
-
-  // ===== Aksi perangkat =====
-  function terapkanAksi(aksi) {
-    const berubah = [];
-    (aksi || []).forEach(a => {
-      if (!a || typeof a.nyala !== 'boolean' || !(a.perangkat in status)) return;
-      status[a.perangkat] = a.nyala;
-      berubah.push(namaDari(a.perangkat) + (a.nyala ? ' → nyala' : ' → mati'));
-    });
-    tulis('status', status);
-    renderPerangkat();
-    return berubah;
-  }
-
-  // ===== Suara jawaban (Text-to-Speech bawaan browser) =====
-  let suaraTerbuka = false;
-  function bukaSuara() { // iOS hanya mengizinkan suara setelah ketukan pertama
-    if (suaraTerbuka || !('speechSynthesis' in window)) return;
-    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); suaraTerbuka = true; } catch (e) {}
-  }
-  function bicara(teks) {
-    if (!setelan.suara || !teks || !('speechSynthesis' in window)) return;
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(teks);
-      u.lang = 'id-ID';
-      const v = speechSynthesis.getVoices().find(x => /^id/i.test(x.lang));
-      if (v) u.voice = v;
-      speechSynthesis.speak(u);
-    } catch (e) {}
-  }
-
-  // ===== Perekaman =====
-  let rekam = null;
-  let audioCtx = null;
-
-  function pilihMime() {
-    const calon = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
-    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
-    return calon.find(m => MediaRecorder.isTypeSupported(m)) || '';
-  }
-
-  el.mic.onclick = async () => {
-    bukaSuara();
-    if (sibuk) return;
-    if (rekam) { berhentiRekam(); return; }
-    if (!modeServer()) {
-      tambahLog('galat', 'Mikrofon butuh server. Buka ⚙️ Setelan dan isi URL Edge Function, atau coba perintah ketik dulu.');
-      return;
-    }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-      tambahLog('galat', 'Browser ini belum mendukung perekaman suara. Coba Safari atau Chrome versi terbaru.');
-      return;
-    }
-    if (!audioCtx) { // dibuat saat ketukan agar diizinkan iOS
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) { try { audioCtx = new AC(); } catch (e) {} }
-    }
-    try {
-      if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
-      await mulaiRekam();
-    } catch (e) {
-      tambahLog('galat', pesanGalat(e));
-      setStatus('Ketuk mikrofon lalu bicara');
-    }
-  };
-
-  async function mulaiRekam() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-    });
-    const mime = pilihMime();
-    let recorder;
-    try { recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
-    catch (e) { recorder = new MediaRecorder(stream); }
-    const r = { stream, recorder, chunks: [], mulai: Date.now(), timer: null, selesai: false };
-    recorder.ondataavailable = e => { if (e.data && e.data.size) r.chunks.push(e.data); };
-    recorder.onstop = () => selesaiRekam(r);
-    recorder.start();
-    rekam = r;
-    el.mic.classList.add('rekam');
-    el.mic.textContent = '⏹';
-    const tampil = () => {
-      const sisa = BATAS_REKAM_DETIK - Math.floor((Date.now() - r.mulai) / 1000);
-      setStatus('Mendengarkan… ketuk lagi bila selesai (' + Math.max(sisa, 0) + ' dtk)');
-      if (sisa <= 0) berhentiRekam();
-    };
-    tampil();
-    r.timer = setInterval(tampil, 250);
-  }
-
-  function berhentiRekam() {
-    const r = rekam;
-    if (!r) return;
-    rekam = null;
-    clearInterval(r.timer);
-    el.mic.classList.remove('rekam');
-    el.mic.textContent = '🎙️';
-    try { if (r.recorder.state !== 'inactive') r.recorder.stop(); else selesaiRekam(r); }
-    catch (e) { selesaiRekam(r); }
-  }
-
-  async function selesaiRekam(r) {
-    if (r.selesai) return;
-    r.selesai = true;
-    r.stream.getTracks().forEach(t => t.stop()); // mikrofon benar-benar dimatikan
-    const durasi = (Date.now() - r.mulai) / 1000;
-    const blob = new Blob(r.chunks, { type: r.recorder.mimeType || 'audio/mp4' });
-    if (durasi < 0.6 || blob.size < 500) {
-      setStatus('Rekaman terlalu singkat. Ketuk, bicara, lalu ketuk lagi.');
-      return;
-    }
-    setSibuk(true, 'Jarvis mendengarkan rekaman…');
-    try {
-      const audio = await siapkanAudio(blob);
-      await kirim({ audio: audio.data, mimeType: audio.mime });
-    } catch (e) {
-      tambahLog('galat', pesanGalat(e));
-    } finally {
-      setSibuk(false);
-    }
-  }
-
-  // Ubah rekaman (mp4/webm) menjadi WAV 16 kHz mono agar pasti terbaca Gemini.
-  async function siapkanAudio(blob) {
-    try {
-      if (!audioCtx) throw new Error('AudioContext tidak tersedia');
-      const buf = await blob.arrayBuffer();
-      const ab = await dekode(buf);
-      const sampel = resample(keMono(ab), ab.sampleRate, SR_TUJUAN);
-      const wav = encodeWAV(sampel, SR_TUJUAN);
-      return { data: await keBase64(new Blob([wav], { type: 'audio/wav' })), mime: 'audio/wav' };
-    } catch (e) {
-      // cadangan: kirim apa adanya
-      return { data: await keBase64(blob), mime: (blob.type || 'audio/mp4').split(';')[0] };
-    }
-  }
-  function dekode(buf) {
-    return new Promise((res, rej) => {
-      try { const p = audioCtx.decodeAudioData(buf, res, rej); if (p && p.then) p.then(res, rej); }
-      catch (e) { rej(e); }
-    });
-  }
-  function keMono(ab) {
-    if (ab.numberOfChannels === 1) return ab.getChannelData(0);
-    const n = ab.length, out = new Float32Array(n);
-    for (let c = 0; c < ab.numberOfChannels; c++) {
-      const d = ab.getChannelData(c);
-      for (let i = 0; i < n; i++) out[i] += d[i] / ab.numberOfChannels;
-    }
-    return out;
-  }
-  function resample(input, dari, ke) {
-    if (dari === ke) return input;
-    const rasio = dari / ke;
-    const n = Math.floor(input.length / rasio);
-    const out = new Float32Array(n);
-    for (let i = 0; i < n; i++) { // rata-rata per jendela = penyaring sederhana
-      const a = Math.floor(i * rasio);
-      const b = Math.min(input.length, Math.max(a + 1, Math.floor((i + 1) * rasio)));
-      let s = 0;
-      for (let j = a; j < b; j++) s += input[j];
-      out[i] = s / (b - a);
-    }
-    return out;
-  }
-  function encodeWAV(sampel, sr) {
-    const buf = new ArrayBuffer(44 + sampel.length * 2);
-    const v = new DataView(buf);
-    const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-    str(0, 'RIFF'); v.setUint32(4, 36 + sampel.length * 2, true); str(8, 'WAVE');
-    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-    str(36, 'data'); v.setUint32(40, sampel.length * 2, true);
-    for (let i = 0, o = 44; i < sampel.length; i++, o += 2) {
-      const x = Math.max(-1, Math.min(1, sampel[i]));
-      v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true);
-    }
-    return buf;
-  }
-  function keBase64(blob) {
-    return new Promise((res, rej) => {
-      const fr = new FileReader();
-      fr.onload = () => res(String(fr.result).split(',')[1] || '');
-      fr.onerror = () => rej(fr.error);
-      fr.readAsDataURL(blob);
-    });
-  }
-
-  // ===== Komunikasi dengan server =====
-  async function kirim(payload) {
-    const body = Object.assign({
-      perangkat: PERANGKAT.map(p => ({ id: p.id, nama: p.nama, nyala: !!status[p.id] }))
-    }, payload);
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 40000);
-    let res;
-    try {
-      res = await fetch(setelan.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-jarvis-token': setelan.token || '' },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
-    } finally { clearTimeout(t); }
-    let data = null;
-    try { data = await res.json(); } catch (e) {}
-    if (!res.ok) throw new Error(data && data.error ? data.error : 'Server membalas kode ' + res.status);
-    if (!data || typeof data.balasan !== 'string') throw new Error('Balasan server tidak terbaca.');
-    tanganiBalasan(data, !!payload.teks);
-  }
-
-  function tanganiBalasan(data, dariKetik) {
-    if (!dariKetik) tambahLog('saya', data.transkrip ? data.transkrip : '(suara tidak terdengar jelas)', '🎙️ suara');
-    const berubah = terapkanAksi(data.aksi);
-    tambahLog('jarvis', data.balasan, berubah.length ? berubah.join(' · ') : '');
-    bicara(data.balasan);
-  }
-
-  function pesanGalat(e) {
-    const n = e && e.name, m = (e && e.message) || String(e);
-    if (n === 'AbortError') return 'Server terlalu lama menjawab. Coba lagi.';
-    if (n === 'NotAllowedError') return 'Izin mikrofon ditolak. Buka Pengaturan → Safari → Mikrofon, pilih "Izinkan", lalu muat ulang halaman.';
-    if (n === 'NotFoundError') return 'Mikrofon tidak ditemukan di perangkat ini.';
-    if (/Failed to fetch|Load failed|NetworkError/i.test(m)) return 'Tidak bisa menghubungi server. Periksa URL di Setelan dan koneksi internet.';
-    return m;
-  }
-
-  // ===== Mode demo: pemahaman sederhana tanpa AI =====
-  function gabungNama(ids) {
-    const n = ids.map(namaDari);
-    return n.length <= 1 ? n.join('') : n.slice(0, -1).join(', ') + ' dan ' + n[n.length - 1];
-  }
-  function ringkasStatus() {
-    const on = PERANGKAT.filter(p => status[p.id]).map(p => p.id);
-    return on.length ? 'Yang sedang menyala: ' + gabungNama(on) + '.' : 'Semua perangkat sedang mati.';
-  }
-  function prosesLokal(teks) {
-    const t = teks.toLowerCase();
-    const matikan = /(mati|padam|nonaktif|\boff\b)/.test(t);
-    const nyalakan = !matikan && /(nyala|hidup|aktif|\bon\b)/.test(t);
-    let target = [];
-    if (/semua|seluruh/.test(t)) {
-      target = PERANGKAT.filter(p => !/lampu/.test(t) || p.id.indexOf('lampu') === 0).map(p => p.id);
-    } else {
-      if (/teras/.test(t)) target.push('lampu_teras');
-      if (/kamar/.test(t)) target.push('lampu_kamar');
-      if (/kipas/.test(t)) target.push('kipas');
-      if (/pompa|kebun|siram/.test(t)) target.push('pompa_kebun');
-    }
-    if (/status|kondisi|yang nyala|yang menyala/.test(t) && !(matikan || nyalakan)) {
-      return { balasan: ringkasStatus(), aksi: [] };
-    }
-    if (!target.length || !(matikan || nyalakan)) {
-      return { balasan: 'Mode demo hanya mengerti perintah sederhana, misalnya "nyalakan lampu teras" atau "matikan semua". Isi URL server di Setelan agar Gemini yang memahami perintah.', aksi: [] };
-    }
-    const nyala = !matikan;
-    return {
-      balasan: (nyala ? 'Baik, saya nyalakan ' : 'Baik, saya matikan ') + gabungNama(target) + '.',
-      aksi: target.map(id => ({ perangkat: id, nyala })),
-    };
-  }
-
-  // ===== Perintah ketik =====
-  el.form.onsubmit = async (e) => {
-    e.preventDefault();
-    bukaSuara();
-    const teks = el.input.value.trim();
-    if (!teks || sibuk || rekam) return;
-    el.input.value = '';
-    el.input.blur();
-    tambahLog('saya', teks);
-    if (!modeServer()) {
-      const h = prosesLokal(teks);
-      tanganiBalasan({ balasan: h.balasan, aksi: h.aksi }, true);
-      return;
-    }
-    setSibuk(true, 'Jarvis berpikir…');
-    try { await kirim({ teks }); }
-    catch (err) { tambahLog('galat', pesanGalat(err)); }
-    finally { setSibuk(false); }
-  };
-
-  // ===== Setelan =====
-  $('tombolSetelan').onclick = () => {
-    el.setUrl.value = setelan.url;
-    el.setToken.value = setelan.token;
-    el.setSuara.checked = !!setelan.suara;
-    el.panel.classList.add('buka');
-  };
-  el.panel.onclick = (e) => { if (e.target === el.panel) el.panel.classList.remove('buka'); };
-  $('tombolSimpan').onclick = () => {
-    const url = el.setUrl.value.trim();
-    if (url && !/^https:\/\//i.test(url)) { alert('URL harus diawali https://'); return; }
-    setelan.url = url;
-    setelan.token = el.setToken.value.trim();
-    setelan.suara = el.setSuara.checked;
-    tulis('setelan', setelan);
-    renderMode();
-    el.panel.classList.remove('buka');
-  };
-  $('tombolReset').onclick = () => {
-    terapkanAksi(PERANGKAT.map(p => ({ perangkat: p.id, nyala: false })));
-    el.panel.classList.remove('buka');
-  };
-
-  // ===== Mulai =====
-  renderPerangkat();
-  renderMode();
-  tambahLog('jarvis', 'Halo, Pak. Ini prototipe tahap 1. Ketuk mikrofon untuk bicara, atau ketik "nyalakan lampu teras".');
-
-  window.__jarvis = { prosesLokal, resample, encodeWAV, status }; // untuk pengujian
+  const pipi = eks === EKSPRESI.senang ? .45 : .25;
+  $('pipiL').setAttribute('opacity', pipi); $('pipiR').setAttribute('opacity', pipi);
+}
+function loop(t){
+  if (bicara) {
+    // gerak mulut saat bicara: osilasi + dorongan dari tiap kata
+    const osc = (Math.sin(t/70) + Math.sin(t/43)) * .25 + .45;
+    target = Math.max(target * .9, osc * .7);
+  } else target = 0;
+  buka += (target - buka) * .35;
+  gambar();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+(function jadwalKedip(){
+  setTimeout(() => {
+    kedip = .1; setTimeout(() => { kedip = 1; jadwalKedip(); }, 130);
+  }, 2200 + Math.random()*3000);
 })();
+function setEkspresi(n){ eks = EKSPRESI[n] || EKSPRESI.netral; }
+
+// ===== Pengaturan =====
+const simpanLS = (k,v) => { try { localStorage.setItem('asw_'+k, v); } catch(e){} };
+const ambilLS = k => { try { return localStorage.getItem('asw_'+k); } catch(e){ return null; } };
+for (const k of ['key','model','nama','laju']) { const v = ambilLS(k); if (v) $(k).value = v; }
+$('lajuV').textContent = (+$('laju').value).toFixed(1);
+$('judul').textContent = $('nama').value || 'Asisten';
+if (!$('key').value) $('set').open = true;
+
+let daftarSuara = [];
+function isiSuara(){
+  if (!('speechSynthesis' in window)) return;
+  daftarSuara = speechSynthesis.getVoices();
+  const id = daftarSuara.filter(v => /^id/i.test(v.lang));
+  const pilihan = id.length ? id : daftarSuara;
+  const tersimpan = ambilLS('suara');
+  $('suara').innerHTML = '';
+  pilihan.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v.name; o.textContent = `${v.name} (${v.lang})`;
+    if (v.name === tersimpan) o.selected = true;
+    $('suara').appendChild(o);
+  });
+  if (!id.length && pilihan.length) status('Suara bahasa Indonesia tidak ditemukan di perangkat ini');
+}
+if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged = isiSuara; }
+
+$('laju').oninput = () => $('lajuV').textContent = (+$('laju').value).toFixed(1);
+$('simpan').onclick = () => {
+  for (const k of ['key','model','nama','laju']) simpanLS(k, $(k).value.trim());
+  simpanLS('suara', $('suara').value);
+  $('judul').textContent = $('nama').value || 'Asisten';
+  status('Pengaturan disimpan'); $('set').open = false;
+};
+$('tes').onclick = () => { bukaKunciSuara(); ucapkan('Halo, saya ' + ($('nama').value || 'asisten Anda') + '. Senang bertemu dengan Anda.', 'senang'); };
+$('hapus').onclick = () => { riwayat = []; $('log').innerHTML = ''; setEkspresi('netral'); status('Obrolan dihapus'); };
+
+// ===== Tampilan obrolan =====
+function status(t){ $('status').textContent = t; }
+function tambah(teks, kelas){
+  const d = document.createElement('div');
+  d.className = 'msg ' + kelas; d.textContent = teks;
+  $('log').appendChild(d); $('log').scrollTop = $('log').scrollHeight;
+}
+
+// ===== Suara keluar (TTS) =====
+let kunciTerbuka = false;
+function bukaKunciSuara(){ // iOS butuh ucapan pertama dari ketukan pengguna
+  if (kunciTerbuka || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(' '); u.volume = 0;
+  speechSynthesis.speak(u); kunciTerbuka = true;
+}
+function ucapkan(teks, ekspresi){
+  setEkspresi(ekspresi);
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(teks.replace(/[*_#`>]/g, ''));
+  const v = daftarSuara.find(x => x.name === $('suara').value);
+  if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'id-ID';
+  u.rate = +$('laju').value || 1;
+  u.onstart = () => { bicara = true; status('Berbicara…'); };
+  u.onboundary = () => { target = 1; };
+  u.onend = u.onerror = () => { bicara = false; status('Siap'); setTimeout(() => { if (!bicara) setEkspresi('netral'); }, 1500); };
+  speechSynthesis.speak(u);
+}
+
+// ===== Otak: OpenRouter =====
+let riwayat = [];
+function instruksi(){
+  const nama = $('nama').value || 'Asisten';
+  return `Kamu adalah ${nama}, asisten pribadi yang ramah dan cerdas. Jawab dalam bahasa Indonesia yang santai namun sopan, ` +
+    `singkat (1-3 kalimat) karena jawabanmu akan diucapkan dengan suara. Jangan pakai markdown, daftar, atau emoji. ` +
+    `WAJIB: awali jawaban dengan satu label ekspresi dalam kurung siku, pilih salah satu: ` +
+    Object.keys(EKSPRESI).map(k => `[${k}]`).join(' ') + `. Contoh: [senang] Tentu, dengan senang hati!`;
+}
+// Model gratis berbeda-beda, jadi format dibuat sederhana: "[ekspresi] jawaban"
+function urai(raw){
+  let t = String(raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  let ekspresi = 'netral';
+  const m = t.match(/^\s*\[([a-zA-Z]+)\]\s*/);
+  if (m) { if (EKSPRESI[m[1].toLowerCase()]) ekspresi = m[1].toLowerCase(); t = t.slice(m[0].length); }
+  t = t.replace(/\[(netral|senang|berpikir|bingung|sedih|kaget)\]/gi, '').replace(/[*_#`]/g, '').trim();
+  return {ekspresi, jawaban: t || '(Tidak ada jawaban, coba lagi.)'};
+}
+async function tanyaAI(pesan){
+  const key = $('key').value.trim();
+  if (!key) throw new Error('API key belum diisi. Buka Pengaturan di bawah.');
+  riwayat.push({role:'user', content:pesan});
+  const model = $('model').value.trim() || 'openrouter/free';
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
+    body: JSON.stringify({
+      model,
+      messages:[{role:'system', content:instruksi()}, ...riwayat.slice(-16)],
+      max_tokens: 400
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    riwayat.pop();
+    let msg = data.error?.message || ('Gagal menghubungi OpenRouter (' + res.status + ')');
+    if (res.status === 429) msg = 'Batas pemakaian model gratis tercapai. Tunggu sebentar atau coba model lain. (' + msg + ')';
+    if (/data policy/i.test(msg)) msg += ' — Buka openrouter.ai/settings/privacy dan izinkan endpoint model gratis.';
+    throw new Error(msg);
+  }
+  const hasil = urai(data.choices?.[0]?.message?.content);
+  riwayat.push({role:'assistant', content:`[${hasil.ekspresi}] ${hasil.jawaban}`});
+  if (data.model) status('Dijawab oleh: ' + data.model);
+  return hasil;
+}
+
+let sibuk = false;
+async function kirim(pesan){
+  pesan = pesan.trim();
+  if (!pesan || sibuk) return;
+  sibuk = true; $('teks').value = '';
+  tambah(pesan, 'u');
+  setEkspresi('berpikir'); status('Sedang berpikir…');
+  try {
+    const h = await tanyaAI(pesan);
+    tambah(h.jawaban, 'a');
+    ucapkan(h.jawaban, h.ekspresi);
+  } catch (e) {
+    tambah(e.message, 'e'); setEkspresi('bingung'); status('Ada masalah');
+  } finally { sibuk = false; }
+}
+$('f').onsubmit = e => { e.preventDefault(); bukaKunciSuara(); kirim($('teks').value); };
+
+// ===== Suara masuk (pengenalan suara) =====
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) { $('mic').style.display = 'none'; status('Mikrofon tidak didukung di browser ini; silakan mengetik'); }
+else {
+  let rek = null;
+  $('mic').onclick = () => {
+    bukaKunciSuara();
+    if (rek) { rek.stop(); return; }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    bicara = false;
+    rek = new SR(); rek.lang = 'id-ID'; rek.interimResults = true;
+    let akhir = '';
+    rek.onstart = () => { $('mic').classList.add('rec'); setEkspresi('kaget'); status('Mendengarkan…'); setTimeout(() => setEkspresi('netral'), 600); };
+    rek.onresult = ev => {
+      let sementara = '';
+      for (const r of ev.results) { if (r.isFinal) akhir = r[0].transcript; else sementara += r[0].transcript; }
+      $('teks').value = akhir || sementara;
+    };
+    rek.onerror = ev => status('Mikrofon: ' + ev.error);
+    rek.onend = () => { $('mic').classList.remove('rec'); rek = null; const t = akhir || $('teks').value; if (t) kirim(t); else status('Siap'); };
+    rek.start();
+  };
+}
+}
 </script>
 </body>
 </html>
