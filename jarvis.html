@@ -235,24 +235,37 @@ async function tanyaAI(pesan){
   if (!key) throw new Error('API key belum diisi. Buka Pengaturan di bawah.');
   riwayat.push({role:'user', content:pesan});
   const model = $('model').value.trim() || 'openrouter/free';
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
-    body: JSON.stringify({
-      model,
-      messages:[{role:'system', content:instruksi()}, ...riwayat.slice(-16)],
-      max_tokens: 400
-    })
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error) {
-    riwayat.pop();
-    let msg = data.error?.message || ('Gagal menghubungi OpenRouter (' + res.status + ')');
-    if (res.status === 429) msg = 'Batas pemakaian model gratis tercapai. Tunggu sebentar atau coba model lain. (' + msg + ')';
-    if (/data policy/i.test(msg)) msg += ' — Buka openrouter.ai/settings/privacy dan izinkan endpoint model gratis.';
-    throw new Error(msg);
+  let data, teks = '', info = '';
+  // Coba sampai 3 kali: model gratis kadang mengembalikan isi kosong
+  // (misalnya model "reasoning" yang habis token untuk berpikir)
+  for (let coba = 1; coba <= 3 && !teks; coba++) {
+    if (coba > 1) status('Jawaban kosong, mencoba lagi (' + coba + '/3)…');
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
+      body: JSON.stringify({
+        model,
+        messages:[{role:'system', content:instruksi()}, ...riwayat.slice(-16)],
+        max_tokens: 3000,
+        reasoning: {effort:'low', exclude:true}
+      })
+    });
+    data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      riwayat.pop();
+      let msg = data.error?.message || ('Gagal menghubungi OpenRouter (' + res.status + ')');
+      if (res.status === 429) msg = 'Batas pemakaian model gratis tercapai. Tunggu sebentar atau coba model lain. (' + msg + ')';
+      if (/data policy/i.test(msg)) msg += ' — Buka openrouter.ai/settings/privacy dan izinkan endpoint model gratis.';
+      throw new Error(msg);
+    }
+    const c = data.choices?.[0];
+    let isi = c?.message?.content;
+    if (Array.isArray(isi)) isi = isi.map(p => p.text || '').join('');
+    teks = String(isi || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+    info = 'model: ' + (data.model || model) + ', finish: ' + (c?.finish_reason || '-');
   }
-  const hasil = urai(data.choices?.[0]?.message?.content);
+  if (!teks) { riwayat.pop(); throw new Error('Model tidak memberi jawaban setelah 3 kali coba (' + info + '). Coba lagi, atau isi kolom Model dengan ID model :free tertentu.'); }
+  const hasil = urai(teks);
   riwayat.push({role:'assistant', content:`[${hasil.ekspresi}] ${hasil.jawaban}`});
   if (data.model) status('Dijawab oleh: ' + data.model);
   return hasil;
