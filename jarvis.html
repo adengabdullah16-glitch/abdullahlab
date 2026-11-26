@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Asisten Berwajah</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* VOICE: ramah, tenang, seperti teman bicara
    IDEA: wajah bulat yang hidup, berkedip, berekspresi, bicara, dan ingat
@@ -99,6 +98,9 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
     <label for="model">Model</label>
     <input id="model" value="openrouter/free">
     <p class="small">Biarkan <b>openrouter/free</b> agar OpenRouter memilih model gratis yang tersedia, atau tempel ID model berakhiran <b>:free</b>.</p>
+    <label for="kode">Kode rahasia Supabase</label>
+    <input id="kode" type="password" autocomplete="off" placeholder="Kode yang Anda tulis di file SQL">
+    <p class="small">Kode ini membuka ingatan bersama (HP &amp; iPad) dan data bot kesehatan. Kosongkan bila hanya ingin menyimpan di perangkat ini.</p>
     <label for="nama">Nama asisten</label>
     <input id="nama" value="Jarvis">
     <label for="suara">Suara</label>
@@ -109,33 +111,18 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
       <button type="button" id="simpan">Simpan</button>
       <button type="button" id="tes" class="alt">Tes suara</button>
     </div>
-    <p class="small">API key hanya disimpan di browser perangkat ini, tidak ada di kode halaman.</p>
+    <p class="small">API key dan kode rahasia hanya disimpan di browser perangkat ini, tidak ada di kode halaman.</p>
   </details>
 
-  <details id="akunPanel">
-    <summary>Sinkron Supabase <span id="akunInfo" class="small">(belum masuk)</span></summary>
-    <p class="small">Opsional. Dengan Supabase, ingatan dan obrolan sama di HP dan iPad. Tanpa ini, semuanya tersimpan di perangkat masing-masing.</p>
-    <label for="sburl">Supabase URL</label>
-    <input id="sburl" placeholder="https://xxxx.supabase.co">
-    <label for="sbkey">Supabase anon key</label>
-    <input id="sbkey" type="password" placeholder="eyJ…">
-    <label for="email">Email akun</label>
-    <input id="email" type="email" autocomplete="username">
-    <label for="pass">Kata sandi</label>
-    <input id="pass" type="password" autocomplete="current-password">
-    <div class="row">
-      <button type="button" id="masuk">Masuk</button>
-      <button type="button" id="keluar" class="alt">Keluar</button>
-    </div>
-  </details>
 </main>
 
 <script>
 // ================== ISI DI SINI ==================
-// Supabase URL & anon key (Project Settings → API). Aman ditaruh di sini
-// selama RLS aktif. JANGAN isi service_role key!
-const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+// Supabase URL & anon/publishable key (Project Settings → API).
+// Aman ditaruh di sini karena tabel hanya bisa diakses lewat fungsi yang
+// memeriksa kode rahasia. JANGAN isi service_role / secret key!
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -199,12 +186,7 @@ function tambah(teks, kelas){
 }
 
 // ===== Pengaturan =====
-for (const k of ['key','model','nama','laju','sburl','sbkey','email']) { const v = ambilLS(k); if (v) $(k).value = v; }
-if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-  // Sudah ditanam di kode: sembunyikan kolom URL & key
-  $('sburl').value = SUPABASE_URL; $('sbkey').value = SUPABASE_ANON_KEY;
-  for (const id of ['sburl','sbkey']) { $(id).style.display = 'none'; document.querySelector(`label[for=${id}]`).style.display = 'none'; }
-}
+for (const k of ['key','model','nama','laju','kode']) { const v = ambilLS(k); if (v) $(k).value = v; }
 $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('judul').textContent = $('nama').value || 'Asisten';
 if (!$('key').value) $('set').open = true;
@@ -228,55 +210,54 @@ if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged =
 
 $('laju').oninput = () => $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('simpan').onclick = () => {
-  for (const k of ['key','model','nama','laju']) simpanLS(k, $(k).value.trim());
+  for (const k of ['key','model','nama','laju','kode']) simpanLS(k, $(k).value.trim());
   simpanLS('suara', $('suara').value);
   $('judul').textContent = $('nama').value || 'Asisten';
   status('Pengaturan disimpan'); $('set').open = false;
+  muatSemua();
 };
 $('tes').onclick = () => { bukaKunciSuara(); ucapkan('Halo, saya ' + ($('nama').value || 'asisten Anda') + '. Senang bertemu dengan Anda.', 'senang'); };
 
-// ===== Ingatan: Supabase atau lokal =====
-let sb = null, user = null;
+// ===== Ingatan: Supabase (lewat kode rahasia) atau lokal =====
 let riwayat = [];   // {role, content}
 let fakta = [];     // {id, fakta}
+const awan = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY && $('kode').value.trim());
+async function rpc(fn, args = {}){
+  const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/rpc/' + fn, {
+    method:'POST',
+    headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY},
+    body: JSON.stringify({p_kode: $('kode').value.trim(), ...args})
+  });
+  const t = await res.text();
+  let d = null; try { d = t ? JSON.parse(t) : null; } catch(e) { d = t; }
+  if (!res.ok) {
+    const m = d?.message || ('Supabase ' + res.status);
+    throw new Error(/kode salah/i.test(m) ? 'Kode rahasia salah. Periksa di Pengaturan.' : m);
+  }
+  return d;
+}
 
 const DB = {
-  async muatPesan(){
-    if (user) {
-      const {data, error} = await sb.from('asisten_pesan').select('role,content').order('id', {ascending:false}).limit(30);
-      if (error) throw error;
-      return (data || []).reverse();
-    }
-    return ambilJSON('pesan', []);
+  async muat(){
+    if (awan()) { const d = await rpc('asisten_muat'); return {pesan: d?.pesan || [], fakta: d?.fakta || []}; }
+    return {pesan: ambilJSON('pesan', []), fakta: ambilJSON('fakta', [])};
   },
   async simpanPesan(role, content){
-    if (user) { const {error} = await sb.from('asisten_pesan').insert({role, content}); if (error) console.warn(error); return; }
+    if (awan()) { try { await rpc('asisten_simpan_pesan', {p_role: role, p_content: content}); } catch(e) { console.warn(e); } return; }
     const p = ambilJSON('pesan', []); p.push({role, content}); simpanLS('pesan', JSON.stringify(p.slice(-60)));
   },
   async hapusPesan(){
-    if (user) { const {error} = await sb.from('asisten_pesan').delete().eq('user_id', user.id); if (error) throw error; return; }
+    if (awan()) { await rpc('asisten_hapus_pesan'); return; }
     simpanLS('pesan', '[]');
   },
-  async muatFakta(){
-    if (user) {
-      const {data, error} = await sb.from('asisten_fakta').select('id,fakta').order('id');
-      if (error) throw error;
-      return data || [];
-    }
-    return ambilJSON('fakta', []);
-  },
   async tambahFakta(teks){
-    if (user) {
-      const {data, error} = await sb.from('asisten_fakta').insert({fakta: teks}).select('id,fakta').single();
-      if (error) throw error;
-      return data;
-    }
+    if (awan()) return await rpc('asisten_tambah_fakta', {p_fakta: teks});
     const f = {id: Date.now() + Math.random(), fakta: teks};
     simpanLS('fakta', JSON.stringify([...ambilJSON('fakta', []), f]));
     return f;
   },
   async hapusFakta(id){
-    if (user) { const {error} = await sb.from('asisten_fakta').delete().eq('id', id); if (error) throw error; return; }
+    if (awan()) { await rpc('asisten_hapus_fakta', {p_id: id}); return; }
     simpanLS('fakta', JSON.stringify(ambilJSON('fakta', []).filter(f => f.id !== id)));
   }
 };
@@ -292,7 +273,7 @@ function tampilFakta(){
     li.append(s, b); ul.appendChild(li);
   });
   $('jmlFakta').textContent = fakta.length ? `(${fakta.length})` : '';
-  $('lokasiData').textContent = user ? 'Tersinkron lewat Supabase (' + user.email + ').' : 'Tersimpan di perangkat ini saja.';
+  $('lokasiData').textContent = awan() ? 'Tersinkron lewat Supabase (sama di semua perangkat yang memakai kode ini).' : 'Tersimpan di perangkat ini saja.';
 }
 async function ingat(teks){
   teks = teks.trim().replace(/\.$/, '');
@@ -310,8 +291,8 @@ async function lupakan(kata){
 }
 async function muatSemua(){
   try {
-    riwayat = await DB.muatPesan();
-    fakta = await DB.muatFakta();
+    const d = await DB.muat();
+    riwayat = d.pesan; fakta = d.fakta;
   } catch(e) { status('Gagal memuat ingatan: ' + e.message); riwayat = []; fakta = []; }
   $('log').innerHTML = '';
   riwayat.slice(-20).forEach(p => tambah(p.role === 'user' ? p.content : urai(p.content).jawaban, p.role === 'user' ? 'u' : 'a'));
@@ -328,37 +309,6 @@ $('hapusFakta').onclick = async () => {
 $('hapus').onclick = async () => {
   try { await DB.hapusPesan(); riwayat = []; $('log').innerHTML = ''; setEkspresi('netral'); status('Riwayat obrolan dihapus (ingatan tetap ada)'); }
   catch(e){ status('Gagal menghapus: ' + e.message); }
-};
-
-// ===== Akun Supabase =====
-function buatKlien(){
-  const url = $('sburl').value.trim(), k = $('sbkey').value.trim();
-  if (!url || !k) return null;
-  if (!window.supabase) { status('Library Supabase gagal dimuat'); return null; }
-  return window.supabase.createClient(url, k);
-}
-function tampilAkun(){ $('akunInfo').textContent = user ? '(masuk: ' + user.email + ')' : '(belum masuk)'; }
-async function initAkun(){
-  sb = buatKlien();
-  if (sb) { const {data} = await sb.auth.getSession(); user = data.session?.user || null; }
-  tampilAkun();
-  await muatSemua();
-}
-$('masuk').onclick = async () => {
-  simpanLS('sburl', $('sburl').value.trim()); simpanLS('sbkey', $('sbkey').value.trim()); simpanLS('email', $('email').value.trim());
-  sb = buatKlien();
-  if (!sb) { status('Isi Supabase URL dan anon key dulu'); return; }
-  status('Masuk…');
-  const {data, error} = await sb.auth.signInWithPassword({email: $('email').value.trim(), password: $('pass').value});
-  if (error) { status('Gagal masuk: ' + error.message); return; }
-  $('pass').value = ''; user = data.user; tampilAkun(); status('Berhasil masuk');
-  $('akunPanel').open = false;
-  await muatSemua();
-};
-$('keluar').onclick = async () => {
-  if (sb) await sb.auth.signOut();
-  user = null; tampilAkun(); status('Keluar. Sekarang memakai ingatan di perangkat ini.');
-  await muatSemua();
 };
 
 // ===== Suara keluar (TTS) =====
@@ -425,12 +375,10 @@ function ringkasKesehatan(d){
 }
 async function konteksKesehatan(pesan){
   if (!KATA_SEHAT.test(pesan)) return '';
-  if (!user) return 'CATATAN: data makan & olahraga tidak bisa dibaca karena pengguna belum masuk di panel "Sinkron Supabase". Sampaikan itu bila ia bertanya soal catatan makannya.';
+  if (!awan()) return 'CATATAN: data makan & olahraga tidak bisa dibaca karena kode rahasia Supabase belum diisi di Pengaturan. Sampaikan itu bila ia bertanya soal catatan makannya.';
   status('Membaca catatan kesehatan…');
   try {
-    const {data, error} = await sb.rpc('asisten_kesehatan', {p_hari: 7});
-    if (error) throw error;
-    return ringkasKesehatan(data);
+    return ringkasKesehatan(await rpc('asisten_kesehatan', {p_hari: 7}));
   } catch(e) {
     status('Catatan kesehatan tidak terbaca: ' + e.message);
     return 'CATATAN: data makan & olahraga gagal dibaca (' + e.message + '). Jangan mengarang angka; bilang datanya belum bisa diambil.';
@@ -582,7 +530,7 @@ function dengar(){
 if (!SR) { $('mic').style.display = 'none'; $('bebas').style.display = 'none'; status('Mikrofon tidak didukung di browser ini; silakan mengetik'); }
 $('mic').onclick = () => { bukaKunciSuara(); if (rek) { rek.stop(); return; } dengar(); };
 
-initAkun();
+muatSemua();
 }
 </script>
 </body>
