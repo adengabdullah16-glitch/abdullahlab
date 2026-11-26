@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Asisten Berwajah</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* VOICE: ramah, tenang, seperti teman bicara
-   IDEA: wajah bulat yang hidup, berkedip, berekspresi, bicara
+   IDEA: wajah bulat yang hidup, berkedip, berekspresi, bicara, dan ingat
    PICTURE: wajah SVG besar di atas, percakapan di bawahnya
    COLOUR: hijau toska lembut, wajah oranye hangat, aksen tinta gelap
    LAYOUT: satu kolom, nyaman di HP dan iPad */
@@ -19,23 +20,30 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,
 main{max-width:680px;margin:0 auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
 h1{font-size:22px;margin:4px 0 0;text-align:center}
 #status{text-align:center;color:var(--muted);font-size:14px;min-height:21px}
-.wajah{display:block;width:min(72vw,300px);margin:6px auto 4px}
-#log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;height:34vh;overflow-y:auto}
+.wajah{display:block;width:min(66vw,280px);margin:6px auto 4px}
+#log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;height:32vh;overflow-y:auto}
 .msg{margin:6px 0;padding:8px 12px;border-radius:14px;max-width:85%;white-space:pre-wrap;overflow-wrap:anywhere}
 .u{margin-left:auto;background:var(--accent);color:#fff}
 .a{background:light-dark(#eef6f4,#21403a)}
 .e{background:#fde2e1;color:#7a1414}
+.n{margin:6px auto;font-size:13px;color:var(--muted);text-align:center;background:none;padding:2px}
 form{display:flex;gap:8px;margin-top:10px}
 input,select,button{font:inherit;font-size:16px;border-radius:12px}
 input,select{flex:1;padding:10px 12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);width:100%}
 button{min-width:44px;min-height:44px;padding:0 14px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
 button.alt{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
-button.rec{background:#c0392b;color:#fff}
+button.rec{background:#c0392b;color:#fff;border-color:#c0392b}
+button[aria-pressed=true]{background:#f6a25a;color:#2a1606;border-color:#f6a25a}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f6a25a;outline-offset:2px}
-details{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+details{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
 summary{cursor:pointer;font-weight:600}
 label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
 .small{font-size:13px;color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#fakta{list-style:none;padding:0;margin:8px 0 0}
+#fakta li{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+#fakta li span{flex:1;overflow-wrap:anywhere}
+#fakta li button{min-height:36px;min-width:36px;padding:0 10px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -65,30 +73,60 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
 
   <form id="f">
     <button type="button" id="mic" class="alt" aria-label="Bicara">🎤</button>
+    <button type="button" id="bebas" class="alt" aria-pressed="false" aria-label="Mode tangan bebas" title="Mode tangan bebas">🔁</button>
     <input id="teks" autocomplete="off" placeholder="Tulis pesan…">
     <button id="kirim">Kirim</button>
   </form>
+
+  <details id="ingatPanel">
+    <summary>Ingatan <span id="jmlFakta" class="small"></span></summary>
+    <p class="small" id="lokasiData">Tersimpan di perangkat ini saja.</p>
+    <ul id="fakta"></ul>
+    <form id="fTambah" style="margin-top:8px">
+      <input id="faktaBaru" placeholder="Tambah fakta, mis. Saya mengajar kelas X">
+      <button>Tambah</button>
+    </form>
+    <div class="row">
+      <button type="button" id="hapusFakta" class="alt">Hapus semua ingatan</button>
+      <button type="button" id="hapus" class="alt">Hapus riwayat obrolan</button>
+    </div>
+  </details>
 
   <details id="set">
     <summary>Pengaturan</summary>
     <label for="key">OpenRouter API key</label>
     <input id="key" type="password" placeholder="sk-or-… dari openrouter.ai/settings/keys">
     <label for="model">Model</label>
-    <input id="model" value="openrouter/free" list="modelList">
-    <datalist id="modelList">
-      <option value="openrouter/free">Otomatis pilih model gratis</option>
-    </datalist>
-    <p class="small">Biarkan <b>openrouter/free</b> agar OpenRouter memilih model gratis yang sedang tersedia. Atau tempel ID model tertentu yang berakhiran <b>:free</b> dari openrouter.ai/models.</p>
+    <input id="model" value="openrouter/free">
+    <p class="small">Biarkan <b>openrouter/free</b> agar OpenRouter memilih model gratis yang tersedia, atau tempel ID model berakhiran <b>:free</b>.</p>
     <label for="nama">Nama asisten</label>
     <input id="nama" value="Jarvis">
     <label for="suara">Suara</label>
     <select id="suara"></select>
     <label for="laju">Kecepatan bicara: <span id="lajuV">1.0</span></label>
     <input id="laju" type="range" min="0.6" max="1.4" step="0.1" value="1">
-    <p style="margin-top:12px"><button type="button" id="simpan">Simpan</button>
+    <div class="row">
+      <button type="button" id="simpan">Simpan</button>
       <button type="button" id="tes" class="alt">Tes suara</button>
-      <button type="button" id="hapus" class="alt">Hapus obrolan</button></p>
-    <p class="small">API key hanya disimpan di browser perangkat ini (localStorage), tidak ada di kode halaman. Jangan bagikan perangkat/halaman yang sudah berisi key Anda.</p>
+    </div>
+    <p class="small">API key hanya disimpan di browser perangkat ini, tidak ada di kode halaman.</p>
+  </details>
+
+  <details id="akunPanel">
+    <summary>Sinkron Supabase <span id="akunInfo" class="small">(belum masuk)</span></summary>
+    <p class="small">Opsional. Dengan Supabase, ingatan dan obrolan sama di HP dan iPad. Tanpa ini, semuanya tersimpan di perangkat masing-masing.</p>
+    <label for="sburl">Supabase URL</label>
+    <input id="sburl" placeholder="https://xxxx.supabase.co">
+    <label for="sbkey">Supabase anon key</label>
+    <input id="sbkey" type="password" placeholder="eyJ…">
+    <label for="email">Email akun</label>
+    <input id="email" type="email" autocomplete="username">
+    <label for="pass">Kata sandi</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <div class="row">
+      <button type="button" id="masuk">Masuk</button>
+      <button type="button" id="keluar" class="alt">Keluar</button>
+    </div>
   </details>
 </main>
 
@@ -101,25 +139,22 @@ const EKSPRESI = {
   berpikir:{smile:0,   alis:-3,  alisMiring:6,  lihat:[4,-5]},
   bingung: {smile:-.3, alis:0,   alisMiring:-7, lihat:[-3,0]},
   sedih:   {smile:-.8, alis:3,   alisMiring:-5, lihat:[0,4]},
-  kaget:   {smile:0,   alis:-9,  alisMiring:0,  lihat:[0,0]}
+  kaget:   {smile:0,   alis:-9,  alisMiring:0,  lihat:[0,0]},
+  dengar:  {smile:.5,  alis:-4,  alisMiring:0,  lihat:[0,-2]}
 };
+const EKS_AI = ['netral','senang','berpikir','bingung','sedih','kaget'];
 let eks = EKSPRESI.netral, buka = 0, target = 0, bicara = false, kedip = 1;
 
 // ===== Wajah =====
 function gambar(){
-  // mulut
   const y = 134, s = eks.smile, o = buka;
   const lebar = 30 + (eks === EKSPRESI.kaget ? -10 : 0);
-  const x1 = 100 - lebar, x2 = 100 + lebar;
-  const ujung = y - s*8;
-  const atas = y + s*6 - o*3;
-  const bawah = y + s*16 + o*26 + 3;
+  const x1 = 100 - lebar, x2 = 100 + lebar, ujung = y - s*8;
+  const atas = y + s*6 - o*3, bawah = y + s*16 + o*26 + 3;
   $('mulut').setAttribute('d', `M${x1} ${ujung} Q100 ${atas} ${x2} ${ujung} Q100 ${bawah} ${x1} ${ujung} Z`);
-  // alis
   const a = eks.alis, m = eks.alisMiring;
   $('alisL').setAttribute('d', `M54 ${64+a+m} Q70 ${56+a} 86 ${64+a-m}`);
   $('alisR').setAttribute('d', `M114 ${64+a-m} Q130 ${56+a} 146 ${64+a+m}`);
-  // mata & pupil
   const [lx, ly] = eks.lihat;
   for (const [id, cx] of [['L',70],['R',130]]) {
     $('pup'+id).setAttribute('cx', cx + lx);
@@ -131,7 +166,6 @@ function gambar(){
 }
 function loop(t){
   if (bicara) {
-    // gerak mulut saat bicara: osilasi + dorongan dari tiap kata
     const osc = (Math.sin(t/70) + Math.sin(t/43)) * .25 + .45;
     target = Math.max(target * .9, osc * .7);
   } else target = 0;
@@ -141,16 +175,25 @@ function loop(t){
 }
 requestAnimationFrame(loop);
 (function jadwalKedip(){
-  setTimeout(() => {
-    kedip = .1; setTimeout(() => { kedip = 1; jadwalKedip(); }, 130);
-  }, 2200 + Math.random()*3000);
+  setTimeout(() => { kedip = .1; setTimeout(() => { kedip = 1; jadwalKedip(); }, 130); }, 2200 + Math.random()*3000);
 })();
 function setEkspresi(n){ eks = EKSPRESI[n] || EKSPRESI.netral; }
 
-// ===== Pengaturan =====
+// ===== Penyimpanan lokal =====
 const simpanLS = (k,v) => { try { localStorage.setItem('asw_'+k, v); } catch(e){} };
 const ambilLS = k => { try { return localStorage.getItem('asw_'+k); } catch(e){ return null; } };
-for (const k of ['key','model','nama','laju']) { const v = ambilLS(k); if (v) $(k).value = v; }
+const ambilJSON = (k, d) => { try { return JSON.parse(ambilLS(k)) ?? d; } catch(e){ return d; } };
+
+// ===== Tampilan =====
+function status(t){ $('status').textContent = t; }
+function tambah(teks, kelas){
+  const d = document.createElement('div');
+  d.className = 'msg ' + kelas; d.textContent = teks;
+  $('log').appendChild(d); $('log').scrollTop = $('log').scrollHeight;
+}
+
+// ===== Pengaturan =====
+for (const k of ['key','model','nama','laju','sburl','sbkey','email']) { const v = ambilLS(k); if (v) $(k).value = v; }
 $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('judul').textContent = $('nama').value || 'Asisten';
 if (!$('key').value) $('set').open = true;
@@ -169,7 +212,6 @@ function isiSuara(){
     if (v.name === tersimpan) o.selected = true;
     $('suara').appendChild(o);
   });
-  if (!id.length && pilihan.length) status('Suara bahasa Indonesia tidak ditemukan di perangkat ini');
 }
 if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged = isiSuara; }
 
@@ -181,78 +223,201 @@ $('simpan').onclick = () => {
   status('Pengaturan disimpan'); $('set').open = false;
 };
 $('tes').onclick = () => { bukaKunciSuara(); ucapkan('Halo, saya ' + ($('nama').value || 'asisten Anda') + '. Senang bertemu dengan Anda.', 'senang'); };
-$('hapus').onclick = () => { riwayat = []; $('log').innerHTML = ''; setEkspresi('netral'); status('Obrolan dihapus'); };
 
-// ===== Tampilan obrolan =====
-function status(t){ $('status').textContent = t; }
-function tambah(teks, kelas){
-  const d = document.createElement('div');
-  d.className = 'msg ' + kelas; d.textContent = teks;
-  $('log').appendChild(d); $('log').scrollTop = $('log').scrollHeight;
+// ===== Ingatan: Supabase atau lokal =====
+let sb = null, user = null;
+let riwayat = [];   // {role, content}
+let fakta = [];     // {id, fakta}
+
+const DB = {
+  async muatPesan(){
+    if (user) {
+      const {data, error} = await sb.from('asisten_pesan').select('role,content').order('id', {ascending:false}).limit(30);
+      if (error) throw error;
+      return (data || []).reverse();
+    }
+    return ambilJSON('pesan', []);
+  },
+  async simpanPesan(role, content){
+    if (user) { const {error} = await sb.from('asisten_pesan').insert({role, content}); if (error) console.warn(error); return; }
+    const p = ambilJSON('pesan', []); p.push({role, content}); simpanLS('pesan', JSON.stringify(p.slice(-60)));
+  },
+  async hapusPesan(){
+    if (user) { const {error} = await sb.from('asisten_pesan').delete().eq('user_id', user.id); if (error) throw error; return; }
+    simpanLS('pesan', '[]');
+  },
+  async muatFakta(){
+    if (user) {
+      const {data, error} = await sb.from('asisten_fakta').select('id,fakta').order('id');
+      if (error) throw error;
+      return data || [];
+    }
+    return ambilJSON('fakta', []);
+  },
+  async tambahFakta(teks){
+    if (user) {
+      const {data, error} = await sb.from('asisten_fakta').insert({fakta: teks}).select('id,fakta').single();
+      if (error) throw error;
+      return data;
+    }
+    const f = {id: Date.now() + Math.random(), fakta: teks};
+    simpanLS('fakta', JSON.stringify([...ambilJSON('fakta', []), f]));
+    return f;
+  },
+  async hapusFakta(id){
+    if (user) { const {error} = await sb.from('asisten_fakta').delete().eq('id', id); if (error) throw error; return; }
+    simpanLS('fakta', JSON.stringify(ambilJSON('fakta', []).filter(f => f.id !== id)));
+  }
+};
+
+function tampilFakta(){
+  const ul = $('fakta'); ul.innerHTML = '';
+  if (!fakta.length) { const li = document.createElement('li'); li.className = 'small'; li.textContent = 'Belum ada yang diingat. Ceritakan tentang diri Anda, atau tambahkan di bawah.'; ul.appendChild(li); }
+  fakta.forEach(f => {
+    const li = document.createElement('li');
+    const s = document.createElement('span'); s.textContent = f.fakta;
+    const b = document.createElement('button'); b.className = 'alt'; b.textContent = '×'; b.setAttribute('aria-label', 'Hapus ingatan ini');
+    b.onclick = async () => { try { await DB.hapusFakta(f.id); fakta = fakta.filter(x => x.id !== f.id); tampilFakta(); } catch(e){ status('Gagal menghapus: ' + e.message); } };
+    li.append(s, b); ul.appendChild(li);
+  });
+  $('jmlFakta').textContent = fakta.length ? `(${fakta.length})` : '';
+  $('lokasiData').textContent = user ? 'Tersinkron lewat Supabase (' + user.email + ').' : 'Tersimpan di perangkat ini saja.';
 }
+async function ingat(teks){
+  teks = teks.trim().replace(/\.$/, '');
+  if (!teks || teks.length > 200) return;
+  if (fakta.some(f => f.fakta.toLowerCase() === teks.toLowerCase())) return;
+  try { fakta.push(await DB.tambahFakta(teks)); tampilFakta(); tambah('💡 Diingat: ' + teks, 'n'); }
+  catch(e){ status('Gagal menyimpan ingatan: ' + e.message); }
+}
+async function lupakan(kata){
+  kata = kata.trim().toLowerCase();
+  if (kata.length < 3) return;
+  const kena = fakta.filter(f => f.fakta.toLowerCase().includes(kata));
+  for (const f of kena) { try { await DB.hapusFakta(f.id); } catch(e){} }
+  if (kena.length) { fakta = fakta.filter(f => !kena.includes(f)); tampilFakta(); tambah('🗑️ Dilupakan: ' + kena.map(f => f.fakta).join('; '), 'n'); }
+}
+async function muatSemua(){
+  try {
+    riwayat = await DB.muatPesan();
+    fakta = await DB.muatFakta();
+  } catch(e) { status('Gagal memuat ingatan: ' + e.message); riwayat = []; fakta = []; }
+  $('log').innerHTML = '';
+  riwayat.slice(-20).forEach(p => tambah(p.role === 'user' ? p.content : urai(p.content).jawaban, p.role === 'user' ? 'u' : 'a'));
+  tampilFakta();
+}
+
+$('fTambah').onsubmit = e => { e.preventDefault(); const v = $('faktaBaru').value; $('faktaBaru').value = ''; ingat(v); };
+$('hapusFakta').onclick = async () => {
+  if ($('hapusFakta').dataset.yakin !== '1') { $('hapusFakta').dataset.yakin = '1'; $('hapusFakta').textContent = 'Ketuk lagi untuk yakin'; setTimeout(() => { $('hapusFakta').dataset.yakin = ''; $('hapusFakta').textContent = 'Hapus semua ingatan'; }, 3000); return; }
+  for (const f of fakta) { try { await DB.hapusFakta(f.id); } catch(e){} }
+  fakta = []; tampilFakta(); status('Semua ingatan dihapus');
+  $('hapusFakta').dataset.yakin = ''; $('hapusFakta').textContent = 'Hapus semua ingatan';
+};
+$('hapus').onclick = async () => {
+  try { await DB.hapusPesan(); riwayat = []; $('log').innerHTML = ''; setEkspresi('netral'); status('Riwayat obrolan dihapus (ingatan tetap ada)'); }
+  catch(e){ status('Gagal menghapus: ' + e.message); }
+};
+
+// ===== Akun Supabase =====
+function buatKlien(){
+  const url = $('sburl').value.trim(), k = $('sbkey').value.trim();
+  if (!url || !k) return null;
+  if (!window.supabase) { status('Library Supabase gagal dimuat'); return null; }
+  return window.supabase.createClient(url, k);
+}
+function tampilAkun(){ $('akunInfo').textContent = user ? '(masuk: ' + user.email + ')' : '(belum masuk)'; }
+async function initAkun(){
+  sb = buatKlien();
+  if (sb) { const {data} = await sb.auth.getSession(); user = data.session?.user || null; }
+  tampilAkun();
+  await muatSemua();
+}
+$('masuk').onclick = async () => {
+  simpanLS('sburl', $('sburl').value.trim()); simpanLS('sbkey', $('sbkey').value.trim()); simpanLS('email', $('email').value.trim());
+  sb = buatKlien();
+  if (!sb) { status('Isi Supabase URL dan anon key dulu'); return; }
+  status('Masuk…');
+  const {data, error} = await sb.auth.signInWithPassword({email: $('email').value.trim(), password: $('pass').value});
+  if (error) { status('Gagal masuk: ' + error.message); return; }
+  $('pass').value = ''; user = data.user; tampilAkun(); status('Berhasil masuk');
+  $('akunPanel').open = false;
+  await muatSemua();
+};
+$('keluar').onclick = async () => {
+  if (sb) await sb.auth.signOut();
+  user = null; tampilAkun(); status('Keluar. Sekarang memakai ingatan di perangkat ini.');
+  await muatSemua();
+};
 
 // ===== Suara keluar (TTS) =====
 let kunciTerbuka = false;
-function bukaKunciSuara(){ // iOS butuh ucapan pertama dari ketukan pengguna
+function bukaKunciSuara(){
   if (kunciTerbuka || !('speechSynthesis' in window)) return;
   const u = new SpeechSynthesisUtterance(' '); u.volume = 0;
   speechSynthesis.speak(u); kunciTerbuka = true;
 }
 function ucapkan(teks, ekspresi){
   setEkspresi(ekspresi);
-  if (!('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
+  if (!('speechSynthesis' in window)) { status('Browser ini tidak punya fitur suara'); setelahBicara(); return; }
+  const perluJeda = speechSynthesis.speaking || speechSynthesis.pending;
+  if (perluJeda) speechSynthesis.cancel();
+  setTimeout(() => mulaiUcap(teks), perluJeda ? 250 : 0);
+}
+function mulaiUcap(teks){
   const u = new SpeechSynthesisUtterance(teks.replace(/[*_#`>]/g, ''));
   const v = daftarSuara.find(x => x.name === $('suara').value);
   if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'id-ID';
   u.rate = +$('laju').value || 1;
   u.onstart = () => { bicara = true; status('Berbicara…'); };
   u.onboundary = () => { target = 1; };
-  u.onend = u.onerror = () => { bicara = false; status('Siap'); setTimeout(() => { if (!bicara) setEkspresi('netral'); }, 1500); };
+  u.onend = () => { bicara = false; status('Siap'); setTimeout(() => { if (!bicara && !mendengar) setEkspresi('netral'); }, 1500); setelahBicara(); };
+  u.onerror = e => { bicara = false; status('Suara gagal: ' + (e.error || 'tidak diketahui') + '. Coba pilih suara lain di Pengaturan.'); setelahBicara(); };
+  speechSynthesis.resume();
   speechSynthesis.speak(u);
+  setTimeout(() => { if (!bicara && speechSynthesis.pending) status('Suara tertahan. Ketuk "Tes suara" sekali, lalu coba lagi.'); }, 3000);
 }
 
 // ===== Otak: OpenRouter =====
-let riwayat = [];
 function instruksi(){
   const nama = $('nama').value || 'Asisten';
-  return `Kamu adalah ${nama}, asisten pribadi yang ramah dan cerdas. Jawab dalam bahasa Indonesia yang santai namun sopan, ` +
-    `singkat (1-3 kalimat) karena jawabanmu akan diucapkan dengan suara. Jangan pakai markdown, daftar, atau emoji. ` +
-    `WAJIB: awali jawaban dengan satu label ekspresi dalam kurung siku, pilih salah satu: ` +
-    Object.keys(EKSPRESI).map(k => `[${k}]`).join(' ') + `. Contoh: [senang] Tentu, dengan senang hati!`;
+  const tahu = fakta.length ? '\n\nYang kamu ketahui tentang pengguna:\n' + fakta.map(f => '- ' + f.fakta).join('\n') : '';
+  const sekarang = new Date().toLocaleString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'});
+  return `Kamu adalah ${nama}, asisten pribadi yang ramah dan cerdas. Sekarang ${sekarang}. ` +
+    `Jawab dalam bahasa Indonesia yang santai namun sopan, singkat (1-3 kalimat) karena jawabanmu akan diucapkan. ` +
+    `Jangan pakai markdown, daftar, atau emoji. Gunakan pengetahuan tentang pengguna secara wajar, jangan diumbar.\n\n` +
+    `FORMAT WAJIB: awali jawaban dengan satu label ekspresi: ` + EKS_AI.map(k => `[${k}]`).join(' ') + `.\n` +
+    `Jika pengguna menyampaikan fakta penting tentang dirinya yang berguna untuk percakapan berikutnya ` +
+    `(nama, pekerjaan, keluarga, kebiasaan, preferensi, rencana), tambahkan di akhir: [ingat: fakta singkat sudut pandang orang ketiga]. ` +
+    `Jangan mengulang fakta yang sudah diketahui. Jika pengguna meminta melupakan sesuatu, tambahkan [lupakan: kata kunci].\n` +
+    `Contoh: [senang] Salam kenal, Pak Ade! [ingat: Nama pengguna Pak Ade, guru SMA]` + tahu;
 }
-// Model gratis berbeda-beda, jadi format dibuat sederhana: "[ekspresi] jawaban"
 function urai(raw){
-  let t = String(raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  let t = String(raw || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
   let ekspresi = 'netral';
+  const ingatan = [], lupa = [];
+  t = t.replace(/\[ingat:\s*([^\]]+)\]/gi, (_, x) => { ingatan.push(x); return ''; });
+  t = t.replace(/\[lupakan:\s*([^\]]+)\]/gi, (_, x) => { lupa.push(x); return ''; });
   const m = t.match(/^\s*\[([a-zA-Z]+)\]\s*/);
-  if (m) { if (EKSPRESI[m[1].toLowerCase()]) ekspresi = m[1].toLowerCase(); t = t.slice(m[0].length); }
+  if (m) { if (EKS_AI.includes(m[1].toLowerCase())) ekspresi = m[1].toLowerCase(); t = t.slice(m[0].length); }
   t = t.replace(/\[(netral|senang|berpikir|bingung|sedih|kaget)\]/gi, '').replace(/[*_#`]/g, '').trim();
-  return {ekspresi, jawaban: t || '(Tidak ada jawaban, coba lagi.)'};
+  return {ekspresi, jawaban: t, ingatan, lupa};
 }
 async function tanyaAI(pesan){
   const key = $('key').value.trim();
   if (!key) throw new Error('API key belum diisi. Buka Pengaturan di bawah.');
-  riwayat.push({role:'user', content:pesan});
   const model = $('model').value.trim() || 'openrouter/free';
-  let data, teks = '', info = '';
-  // Coba sampai 3 kali: model gratis kadang mengembalikan isi kosong
-  // (misalnya model "reasoning" yang habis token untuk berpikir)
-  for (let coba = 1; coba <= 3 && !teks; coba++) {
+  const pesanKirim = [{role:'system', content:instruksi()}, ...riwayat.slice(-16), {role:'user', content:pesan}];
+  let hasil = null, info = '';
+  for (let coba = 1; coba <= 3 && !hasil; coba++) {
     if (coba > 1) status('Jawaban kosong, mencoba lagi (' + coba + '/3)…');
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
-      body: JSON.stringify({
-        model,
-        messages:[{role:'system', content:instruksi()}, ...riwayat.slice(-16)],
-        max_tokens: 3000,
-        reasoning: {effort:'low', exclude:true}
-      })
+      body: JSON.stringify({model, messages: pesanKirim, max_tokens: 3000, reasoning: {effort:'low', exclude:true}})
     });
-    data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      riwayat.pop();
       let msg = data.error?.message || ('Gagal menghubungi OpenRouter (' + res.status + ')');
       if (res.status === 429) msg = 'Batas pemakaian model gratis tercapai. Tunggu sebentar atau coba model lain. (' + msg + ')';
       if (/data policy/i.test(msg)) msg += ' — Buka openrouter.ai/settings/privacy dan izinkan endpoint model gratis.';
@@ -261,56 +426,99 @@ async function tanyaAI(pesan){
     const c = data.choices?.[0];
     let isi = c?.message?.content;
     if (Array.isArray(isi)) isi = isi.map(p => p.text || '').join('');
-    teks = String(isi || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+    const h = urai(isi);
     info = 'model: ' + (data.model || model) + ', finish: ' + (c?.finish_reason || '-');
+    if (h.jawaban) hasil = h;
   }
-  if (!teks) { riwayat.pop(); throw new Error('Model tidak memberi jawaban setelah 3 kali coba (' + info + '). Coba lagi, atau isi kolom Model dengan ID model :free tertentu.'); }
-  const hasil = urai(teks);
-  riwayat.push({role:'assistant', content:`[${hasil.ekspresi}] ${hasil.jawaban}`});
-  if (data.model) status('Dijawab oleh: ' + data.model);
+  if (!hasil) throw new Error('Model tidak memberi jawaban setelah 3 kali coba (' + info + '). Coba lagi, atau isi kolom Model dengan ID model :free tertentu.');
+  // simpan ke riwayat & ingatan
+  const balasan = `[${hasil.ekspresi}] ${hasil.jawaban}`;
+  riwayat.push({role:'user', content:pesan}, {role:'assistant', content:balasan});
+  DB.simpanPesan('user', pesan).then(() => DB.simpanPesan('assistant', balasan));
+  for (const x of hasil.lupa) await lupakan(x);
+  for (const x of hasil.ingatan) await ingat(x);
   return hasil;
 }
 
+// ===== Mode tangan bebas =====
+let tanganBebas = false, kosongBeruntun = 0;
+function setBebas(on, pesan){
+  tanganBebas = on; kosongBeruntun = 0;
+  $('bebas').setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (pesan) status(pesan);
+}
+function setelahBicara(){
+  if (tanganBebas && !mendengar) setTimeout(() => { if (tanganBebas && !bicara && !sibuk) dengar(); }, 500);
+}
+$('bebas').onclick = () => {
+  bukaKunciSuara();
+  if (tanganBebas) { setBebas(false, 'Mode tangan bebas mati'); if (rek) rek.stop(); return; }
+  if (!SR) { status('Mikrofon tidak didukung di browser ini'); return; }
+  setBebas(true, 'Mode tangan bebas aktif. Ucapkan "berhenti" untuk mematikan.');
+  if (!bicara && !sibuk) dengar();
+};
+
+// ===== Kirim pesan =====
 let sibuk = false;
+const KATA_STOP = /^(berhenti|stop|sudah dulu|cukup|selesai)[.!\s]*$/i;
 async function kirim(pesan){
   pesan = pesan.trim();
   if (!pesan || sibuk) return;
-  sibuk = true; $('teks').value = '';
+  $('teks').value = '';
+  if (tanganBebas && KATA_STOP.test(pesan)) { setBebas(false); tambah(pesan, 'u'); ucapkan('Baik, saya berhenti mendengarkan.', 'senang'); return; }
+  sibuk = true;
   tambah(pesan, 'u');
   setEkspresi('berpikir'); status('Sedang berpikir…');
   try {
     const h = await tanyaAI(pesan);
     tambah(h.jawaban, 'a');
+    sibuk = false;
     ucapkan(h.jawaban, h.ekspresi);
   } catch (e) {
+    sibuk = false;
     tambah(e.message, 'e'); setEkspresi('bingung'); status('Ada masalah');
-  } finally { sibuk = false; }
+    if (tanganBebas) setBebas(false, 'Ada masalah, mode tangan bebas dimatikan');
+  }
 }
 $('f').onsubmit = e => { e.preventDefault(); bukaKunciSuara(); kirim($('teks').value); };
 
 // ===== Suara masuk (pengenalan suara) =====
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (!SR) { $('mic').style.display = 'none'; status('Mikrofon tidak didukung di browser ini; silakan mengetik'); }
-else {
-  let rek = null;
-  $('mic').onclick = () => {
-    bukaKunciSuara();
-    if (rek) { rek.stop(); return; }
-    if ('speechSynthesis' in window) speechSynthesis.cancel();
-    bicara = false;
-    rek = new SR(); rek.lang = 'id-ID'; rek.interimResults = true;
-    let akhir = '';
-    rek.onstart = () => { $('mic').classList.add('rec'); setEkspresi('kaget'); status('Mendengarkan…'); setTimeout(() => setEkspresi('netral'), 600); };
-    rek.onresult = ev => {
-      let sementara = '';
-      for (const r of ev.results) { if (r.isFinal) akhir = r[0].transcript; else sementara += r[0].transcript; }
-      $('teks').value = akhir || sementara;
-    };
-    rek.onerror = ev => status('Mikrofon: ' + ev.error);
-    rek.onend = () => { $('mic').classList.remove('rec'); rek = null; const t = akhir || $('teks').value; if (t) kirim(t); else status('Siap'); };
-    rek.start();
+let rek = null, mendengar = false;
+function dengar(){
+  if (!SR || rek) return;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  bicara = false;
+  rek = new SR(); rek.lang = 'id-ID'; rek.interimResults = true;
+  let akhir = '', galat = '';
+  rek.onstart = () => { mendengar = true; $('mic').classList.add('rec'); setEkspresi('dengar'); status(tanganBebas ? 'Mendengarkan… (tangan bebas)' : 'Mendengarkan…'); };
+  rek.onresult = ev => {
+    let sementara = '';
+    for (const r of ev.results) { if (r.isFinal) akhir += r[0].transcript; else sementara += r[0].transcript; }
+    $('teks').value = akhir || sementara;
   };
+  rek.onerror = ev => { galat = ev.error; if (ev.error !== 'no-speech' && ev.error !== 'aborted') status('Mikrofon: ' + ev.error); };
+  rek.onend = () => {
+    mendengar = false; $('mic').classList.remove('rec'); rek = null;
+    const t = (akhir || $('teks').value).trim();
+    if (t) { kosongBeruntun = 0; kirim(t); return; }
+    setEkspresi('netral');
+    if (galat === 'not-allowed' || galat === 'service-not-allowed') {
+      setBebas(false, 'Mikrofon tidak diizinkan. Di iOS, mendengarkan otomatis mungkin perlu ketukan, jadi tangan bebas dimatikan.');
+      return;
+    }
+    if (tanganBebas) {
+      kosongBeruntun++;
+      if (kosongBeruntun < 3) setTimeout(() => { if (tanganBebas) dengar(); }, 300);
+      else setBebas(false, 'Tidak ada suara, mode tangan bebas berhenti. Ketuk 🔁 untuk lanjut.');
+    } else status('Siap');
+  };
+  try { rek.start(); } catch(e) { rek = null; status('Mikrofon gagal: ' + e.message); setBebas(false); }
 }
+if (!SR) { $('mic').style.display = 'none'; $('bebas').style.display = 'none'; status('Mikrofon tidak didukung di browser ini; silakan mengetik'); }
+$('mic').onclick = () => { bukaKunciSuara(); if (rek) { rek.stop(); return; } dengar(); };
+
+initAkun();
 }
 </script>
 </body>
