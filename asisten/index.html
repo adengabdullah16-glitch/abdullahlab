@@ -144,8 +144,8 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
 // Supabase URL & anon/publishable key (Project Settings → API).
 // Aman ditaruh di sini karena tabel hanya bisa diakses lewat fungsi yang
 // memeriksa kode rahasia. JANGAN isi service_role / secret key!
-const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -349,7 +349,7 @@ const awan = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY && $('kode').value.trim(
 async function rpc(fn, args = {}){
   const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/rpc/' + fn, {
     method:'POST',
-    headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY},
+    headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY},
     body: JSON.stringify({p_kode: $('kode').value.trim(), ...args})
   });
   const t = await res.text();
