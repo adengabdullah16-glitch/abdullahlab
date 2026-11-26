@@ -131,6 +131,12 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
 </main>
 
 <script>
+// ================== ISI DI SINI ==================
+// Supabase URL & anon key (Project Settings → API). Aman ditaruh di sini
+// selama RLS aktif. JANGAN isi service_role key!
+const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+// =================================================
 {
 const $ = id => document.getElementById(id);
 const EKSPRESI = {
@@ -194,6 +200,11 @@ function tambah(teks, kelas){
 
 // ===== Pengaturan =====
 for (const k of ['key','model','nama','laju','sburl','sbkey','email']) { const v = ambilLS(k); if (v) $(k).value = v; }
+if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+  // Sudah ditanam di kode: sembunyikan kolom URL & key
+  $('sburl').value = SUPABASE_URL; $('sbkey').value = SUPABASE_ANON_KEY;
+  for (const id of ['sburl','sbkey']) { $(id).style.display = 'none'; document.querySelector(`label[for=${id}]`).style.display = 'none'; }
+}
 $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('judul').textContent = $('nama').value || 'Asisten';
 if (!$('key').value) $('set').open = true;
