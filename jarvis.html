@@ -26,6 +26,9 @@ h1{font-size:22px;margin:4px 0 0;text-align:center}
 .u{margin-left:auto;background:var(--accent);color:#fff}
 .a{background:light-dark(#eef6f4,#21403a)}
 .e{background:#fde2e1;color:#7a1414}
+.draf{border:2px solid var(--accent);max-width:92%}
+.draf .aksi{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.draf .aksi button{min-height:40px;font-size:15px}
 .n{margin:6px auto;font-size:13px;color:var(--muted);text-align:center;background:none;padding:2px}
 form{display:flex;gap:8px;margin-top:10px}
 input,select,button{font:inherit;font-size:16px;border-radius:12px}
@@ -531,6 +534,7 @@ async function gantiMode(k){
   if (rek) rek.stop();
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   bicara = false;
+  batalDraf(true);
   const dariPribadi = MODE[mode].pribadi;
   mode = k; simpanLS('mode', k); tampilMode();
   if (!MODE[k].pribadi) {
@@ -580,8 +584,11 @@ function instruksi(sehat = ''){
     `Jangan mengulang fakta yang sudah diketahui. Jika pengguna meminta melupakan sesuatu, tambahkan [lupakan: kata kunci].\n` +
     `Contoh: [senang] Salam kenal, Pak Ade! [ingat: Nama pengguna Pak Ade, guru SMA]` + tahu +
     (sehat ? `\n\n${sehat}\n\nATURAN DATA KESEHATAN: untuk pertanyaan soal makan, kalori, atau olahraga, jawab HANYA berdasarkan data di atas. ` +
-      `Jangan mengarang catatan atau angka. Sebut angka sebagai perkiraan dan bulatkan. Kamu tidak bisa mencatat makanan; ` +
-      `bila pengguna ingin mencatat, arahkan ke bot Telegram-nya. Bukan saran medis. Jangan pakai [ingat:] untuk angka harian.` : '');
+      `Jangan mengarang catatan atau angka. Sebut angka sebagai perkiraan dan bulatkan. Bukan saran medis. Jangan pakai [ingat:] untuk angka harian.` : '') +
+    (awan() ? `\n\nMENCATAT: jika pengguna MELAPORKAN makanan/minuman yang sudah atau sedang ia konsumsi, atau olahraga yang sudah ia lakukan ` +
+      `(bukan sekadar bertanya atau berencana), tambahkan [catat] di akhir jawaban, dan jawab singkat bahwa kamu akan menghitung perkiraannya. ` +
+      `Jangan menyebut angka kalori sendiri; perhitungan dilakukan terpisah.`
+      : `\n\nKamu tidak bisa mencatat makanan; bila pengguna ingin mencatat, arahkan ke bot Telegram-nya.`);
 }
 function urai(raw){
   let t = String(raw || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
@@ -589,10 +596,12 @@ function urai(raw){
   const ingatan = [], lupa = [];
   t = t.replace(/\[ingat:\s*([^\]]+)\]/gi, (_, x) => { ingatan.push(x); return ''; });
   t = t.replace(/\[lupakan:\s*([^\]]+)\]/gi, (_, x) => { lupa.push(x); return ''; });
+  let catat = false;
+  t = t.replace(/\[catat\]/gi, () => { catat = true; return ''; });
   const m = t.match(/^\s*\[([a-zA-Z]+)\]\s*/);
   if (m) { if (EKS_AI.includes(m[1].toLowerCase())) ekspresi = m[1].toLowerCase(); t = t.slice(m[0].length); }
   t = t.replace(/\[(netral|senang|berpikir|bingung|sedih|kaget)\]/gi, '').replace(/[*_#`]/g, '').trim();
-  return {ekspresi, jawaban: t, ingatan, lupa};
+  return {ekspresi, jawaban: t, ingatan, lupa, catat};
 }
 async function tanyaAI(pesan){
   const key = $('key').value.trim();
@@ -635,6 +644,149 @@ async function tanyaAI(pesan){
   return hasil;
 }
 
+// ===== Mencatat makan & olahraga (ke data bot kesehatan) =====
+let draf = null;   // {data, sumber, el}
+async function panggilOR(messages, maxTokens = 3000){
+  const key = $('key').value.trim();
+  if (!key) throw new Error('API key belum diisi.');
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
+    body: JSON.stringify({model: $('model').value.trim() || 'openrouter/free', messages, max_tokens: maxTokens, temperature: 0.2, reasoning: {effort:'low', exclude:true}})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error?.message || ('OpenRouter ' + res.status));
+  let isi = data.choices?.[0]?.message?.content;
+  if (Array.isArray(isi)) isi = isi.map(p => p.text || '').join('');
+  return String(isi || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+}
+function promptEstimasi(berat){
+  const jam = new Date().toTimeString().slice(0, 5);
+  return `Kamu memperkirakan catatan makan atau olahraga untuk satu pengguna di Indonesia. Jam sekarang ${jam} WIB. Bukan saran medis.
+ATURAN:
+1. "jenis": "makan" (makanan/minuman) atau "olahraga" (aktivitas fisik). Bila tidak keduanya: "lainnya".
+2. makan: pecah menjadi "item" (maks 12). Tiap item: nama, porsi (ukuran rumah tangga yang kamu asumsikan), kkal_min dan kkal_maks (RENTANG jujur sesuai ketidakpastian porsi, minyak, santan, gula), protein_g, karbo_g, lemak_g. Bila porsi tidak disebut, pakai porsi rumah tangga Indonesia yang umum.
+3. waktu_makan: sarapan, makan siang, makan malam, atau camilan (sesuai ucapan atau jam).
+4. hari_lalu: 0 hari ini, 1 bila menyebut kemarin, 2 bila kemarin lusa.
+5. olahraga: aktivitas, menit, kkal_min, kkal_maks. Bila pengguna menyebut angka kalori (mis. dari jam tangan), pakai persis dan dari_pengguna=true. Berat badan ${berat ? berat + ' kg' : 'tidak diketahui (anggap 65 kg)'}.
+6. "ringkas": frasa pendek maks 100 huruf, mis. "nasi uduk, telur dadar".
+7. Bila ada draf sebelumnya dan koreksi, keluarkan draf LENGKAP yang sudah diperbarui.
+KELUARAN: HANYA JSON, tanpa teks lain:
+{"jenis":"makan","hari_lalu":0,"waktu_makan":"","ringkas":"","item":[{"nama":"","porsi":"","kkal_min":0,"kkal_maks":0,"protein_g":0,"karbo_g":0,"lemak_g":0}],"olahraga":{"aktivitas":"","menit":0,"kkal_min":0,"kkal_maks":0,"dari_pengguna":false}}`;
+}
+const angka = (x, lo, hi) => { const n = Number(String(x ?? '').replace(',', '.').match(/-?\d+(\.\d+)?/)?.[0]); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0; };
+function rapikanDraf(teks){
+  const a = teks.indexOf('{'), b = teks.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  let j; try { j = JSON.parse(teks.slice(a, b + 1)); } catch(e) { return null; }
+  const jenis = j.jenis === 'makan' || j.jenis === 'olahraga' ? j.jenis : null;
+  if (!jenis) return {jenis:'lainnya'};
+  const d = {jenis, hari_lalu: Math.round(angka(j.hari_lalu, 0, 2)), waktu_makan: String(j.waktu_makan || '').slice(0, 20), ringkas: String(j.ringkas || '').slice(0, 120), item: [], olahraga: null};
+  if (jenis === 'makan') {
+    for (const it of (Array.isArray(j.item) ? j.item : []).slice(0, 12)) {
+      if (!it?.nama) continue;
+      let x = angka(it.kkal_min ?? it.kkal, 0, 4000), y = angka(it.kkal_maks ?? it.kkal, 0, 4000);
+      if (x > y) [x, y] = [y, x];
+      d.item.push({nama: String(it.nama).slice(0, 80), porsi: String(it.porsi || '').slice(0, 60), kkal_min: x, kkal_maks: y,
+        protein_g: angka(it.protein_g, 0, 300), karbo_g: angka(it.karbo_g, 0, 600), lemak_g: angka(it.lemak_g, 0, 300)});
+    }
+    if (!d.item.length || d.item.every(i => !i.kkal_maks)) return null;
+    if (!d.ringkas) d.ringkas = d.item.map(i => i.nama).join(', ').slice(0, 120);
+  } else {
+    const o = j.olahraga || {};
+    let x = angka(o.kkal_min, 0, 3000), y = angka(o.kkal_maks, 0, 3000);
+    if (x > y) [x, y] = [y, x];
+    if (!o.aktivitas || !y) return null;
+    d.olahraga = {aktivitas: String(o.aktivitas).slice(0, 60), menit: Math.round(angka(o.menit, 0, 600)), kkal_min: x, kkal_maks: y, dari_pengguna: o.dari_pengguna === true};
+  }
+  return d;
+}
+function totalDraf(d){
+  if (d.jenis === 'olahraga') return {kmin: d.olahraga.kkal_min, kmaks: d.olahraga.kkal_maks, p:0, k:0, l:0};
+  return d.item.reduce((t, i) => ({kmin: t.kmin + i.kkal_min, kmaks: t.kmaks + i.kkal_maks, p: t.p + i.protein_g, k: t.k + i.karbo_g, l: t.l + i.lemak_g}), {kmin:0, kmaks:0, p:0, k:0, l:0});
+}
+function teksDrafUI(d){
+  const t = totalDraf(d), L = [];
+  const kapan = d.hari_lalu === 1 ? ' (kemarin)' : d.hari_lalu === 2 ? ' (2 hari lalu)' : '';
+  if (d.jenis === 'makan') {
+    L.push('🍽️ ' + (d.waktu_makan ? d.waktu_makan[0].toUpperCase() + d.waktu_makan.slice(1) : 'Makan') + kapan);
+    for (const i of d.item) L.push(`• ${i.nama}${i.porsi ? ' (' + i.porsi + ')' : ''}: ${rg(i.kkal_min, i.kkal_maks)} kkal`);
+    L.push(`Total: ${rg(t.kmin, t.kmaks)} kkal · protein ±${Math.round(t.p)} g · karbo ±${Math.round(t.k)} g · lemak ±${Math.round(t.l)} g`);
+  } else {
+    const o = d.olahraga;
+    L.push(`🏃 ${o.aktivitas}${o.menit ? ' — ' + o.menit + ' menit' : ''}${kapan}`);
+    L.push(`Terbakar: ${rg(o.kkal_min, o.kkal_maks)} kkal${o.dari_pengguna ? ' (angka dari Anda)' : ''}`);
+  }
+  return L.join('\n');
+}
+function kartuDraf(d){
+  const box = document.createElement('div');
+  box.className = 'msg a draf';
+  const isi = document.createElement('div'); isi.textContent = teksDrafUI(d);
+  const kecil = document.createElement('div'); kecil.className = 'small'; kecil.textContent = 'Perkiraan. Ucapkan "simpan", "batal", atau koreksinya (mis. "nasinya dua centong").';
+  const aksi = document.createElement('div'); aksi.className = 'aksi';
+  const bS = document.createElement('button'); bS.type = 'button'; bS.textContent = '✅ Simpan'; bS.onclick = () => simpanDraf();
+  const bB = document.createElement('button'); bB.type = 'button'; bB.className = 'alt'; bB.textContent = '❌ Batal'; bB.onclick = () => batalDraf();
+  aksi.append(bS, bB); box.append(isi, kecil, aksi);
+  $('log').appendChild(box); $('log').scrollTop = $('log').scrollHeight;
+  return box;
+}
+async function buatDraf(teks, sumber, lama = null){
+  if (!awan()) return;
+  status('Menghitung perkiraan kalori…'); setEkspresi('berpikir'); sibuk = true;
+  try {
+    let berat = null;
+    try { berat = (await rpc('asisten_kesehatan', {p_hari: 1}))?.profil?.berat_kg || null; } catch(e) {}
+    const isiUser = lama ? `Draf sebelumnya (JSON): ${JSON.stringify(lama)}\nKoreksi pengguna: ${teks}` : `Catatan pengguna: ${teks}`;
+    let d = null;
+    for (let coba = 0; coba < 3 && !d; coba++) d = rapikanDraf(await panggilOR([{role:'system', content: promptEstimasi(berat)}, {role:'user', content: isiUser}]));
+    sibuk = false;
+    if (!d) { const j = 'Maaf, saya belum bisa memperkirakannya. Coba sebutkan lebih rinci.'; tambah(j, 'e'); ucapkan(j, 'bingung'); return; }
+    if (d.jenis === 'lainnya') { if (lama) { batalDraf(true); } const j = 'Sepertinya itu bukan catatan makan atau olahraga.'; tambah(j, 'a'); ucapkan(j, 'bingung'); return; }
+    if (draf?.el) draf.el.querySelector('.aksi')?.replaceChildren(Object.assign(document.createElement('span'), {className:'small', textContent:'(diganti draf baru)'}));
+    draf = {data: d, sumber, el: kartuDraf(d)};
+    const t = totalDraf(d);
+    ucapkan(`${d.jenis === 'makan' ? 'Perkiraannya' : 'Terbakar sekitar'} ${rg(t.kmin, t.kmaks).replace('–', ' sampai ')} kalori. Simpan?`, 'senang');
+  } catch(e) {
+    sibuk = false;
+    tambah('Gagal menghitung: ' + e.message, 'e'); setEkspresi('bingung'); status('Ada masalah');
+  }
+}
+async function simpanDraf(){
+  if (!draf || sibuk) return;
+  const {data: d, sumber, el} = draf; draf = null;
+  const t = totalDraf(d);
+  const payload = {
+    jenis: d.jenis, hari_lalu: d.hari_lalu, sumber,
+    deskripsi: d.jenis === 'makan' ? d.ringkas : `${d.olahraga.aktivitas}${d.olahraga.menit ? ' ' + d.olahraga.menit + ' menit' : ''}`,
+    kkal_min: t.kmin, kkal_maks: t.kmaks, protein_g: t.p, karbo_g: t.k, lemak_g: t.l,
+    durasi_menit: d.jenis === 'olahraga' ? (d.olahraga.menit || null) : null,
+    rincian: d.jenis === 'makan' ? {item: d.item, waktu_makan: d.waktu_makan, dari: 'asisten'} : {dari_pengguna: d.olahraga.dari_pengguna, dari: 'asisten'}
+  };
+  const aksi = el.querySelector('.aksi');
+  try {
+    const id = await rpc('asisten_catat', {p_data: payload});
+    aksi.replaceChildren();
+    const ok = document.createElement('span'); ok.textContent = `✅ Tercatat #${id}`;
+    const bU = document.createElement('button'); bU.type = 'button'; bU.className = 'alt'; bU.textContent = 'Urungkan';
+    bU.onclick = async () => { try { await rpc('asisten_hapus_catatan', {p_id: id}); aksi.replaceChildren(Object.assign(document.createElement('span'), {textContent:'↩️ Diurungkan'})); } catch(e) { status('Gagal mengurungkan: ' + e.message); } };
+    aksi.append(ok, bU);
+    ucapkan('Tersimpan.', 'senang');
+  } catch(e) {
+    draf = {data: d, sumber, el};
+    tambah('Gagal menyimpan: ' + e.message, 'e'); setEkspresi('bingung');
+  }
+}
+function batalDraf(diam = false){
+  if (!draf) return;
+  draf.el.querySelector('.aksi').replaceChildren(Object.assign(document.createElement('span'), {textContent:'❌ Dibatalkan'}));
+  draf = null;
+  if (!diam) ucapkan('Baik, dibatalkan.', 'netral');
+}
+const KATA_YA = /^(ya|iya|iyah|yap|yup|simpan|simpan saja|oke|ok|okay|betul|benar|boleh|lanjut|sip)[.!\s]*$/i;
+const KATA_BATAL = /^(batal|batalkan|tidak|nggak|enggak|ga|gak|jangan|tidak usah|nggak usah|cancel)[.!\s]*$/i;
+const KATA_KOREKSI = /(\d|porsi|centong|piring|gelas|mangkok|potong|sendok|bungkus|tanpa|pakai|bukan|cuma|hanya|setengah|tambah|kurang|besar|kecil|menit|jam|km|kemarin|nasi|lauk|minum|makan|lari|jalan)/i;
+
 // ===== Mode tangan bebas =====
 let tanganBebas = false, kosongBeruntun = 0;
 function setBebas(on, pesan){
@@ -656,10 +808,16 @@ $('bebas').onclick = () => {
 // ===== Kirim pesan =====
 let sibuk = false;
 const KATA_STOP = /^(berhenti|stop|sudah dulu|cukup|selesai|finish|that's all)[.!\s]*$/i;
-async function kirim(pesan){
+async function kirim(pesan, dariSuara = false){
   pesan = pesan.trim();
   if (!pesan || sibuk) return;
   $('teks').value = '';
+  if (draf && MODE[mode].pribadi) {
+    if (KATA_YA.test(pesan)) { tambah(pesan, 'u'); simpanDraf(); return; }
+    if (KATA_BATAL.test(pesan)) { tambah(pesan, 'u'); batalDraf(); return; }
+    if (KATA_KOREKSI.test(pesan) && !cariMode(pesan)) { tambah(pesan, 'u'); buatDraf(pesan, dariSuara ? 'suara' : 'teks', draf.data); return; }
+    batalDraf(true);
+  }
   const pm = cariMode(pesan);
   if (pm) {
     tambah(pesan, 'u');
@@ -680,7 +838,8 @@ async function kirim(pesan){
     const h = await tanyaAI(pesan);
     tambah(h.jawaban, 'a');
     sibuk = false;
-    ucapkan(h.jawaban, h.ekspresi);
+    if (h.catat && MODE[mode].pribadi && awan()) buatDraf(pesan, dariSuara ? 'suara' : 'teks');
+    else ucapkan(h.jawaban, h.ekspresi);
   } catch (e) {
     sibuk = false;
     tambah(e.message, 'e'); setEkspresi('bingung'); status('Ada masalah');
@@ -708,7 +867,7 @@ function dengar(){
   rek.onend = () => {
     mendengar = false; $('mic').classList.remove('rec'); rek = null;
     const t = (akhir || $('teks').value).trim();
-    if (t) { kosongBeruntun = 0; kirim(t); return; }
+    if (t) { kosongBeruntun = 0; kirim(t, true); return; }
     setEkspresi('netral');
     if (galat === 'not-allowed' || galat === 'service-not-allowed') {
       setBebas(false, 'Mikrofon tidak diizinkan. Di iOS, mendengarkan otomatis mungkin perlu ketukan, jadi tangan bebas dimatikan.');
