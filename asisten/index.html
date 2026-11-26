@@ -39,6 +39,11 @@ h1{font-size:22px;margin:4px 0 0;text-align:center}
 .rahasia{-webkit-text-security:disc;text-security:disc}
 .rahasia:focus{-webkit-text-security:none;text-security:none}
 .draf{border:2px solid var(--accent);max-width:92%}
+.berita{max-width:96%}
+.berita ol{margin:6px 0 0;padding-left:20px}
+.berita li{margin:6px 0}
+.berita a{color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.berita .small{display:block}
 .draf .aksi{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .draf .aksi button{min-height:40px;font-size:15px}
 .n{margin:6px auto;font-size:13px;color:var(--muted);text-align:center;background:none;padding:2px}
@@ -125,6 +130,8 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
     <p class="small"><b>Ganti mode dengan perintah</b> (ucapkan atau ketik): "mode pribadi", "mode santai", "mode tutor".
       Saat mode Tutor, perintah suara tidak bisa keluar dari Tutor (agar siswa tidak membuka mode pribadi);
       ketik <b>/pribadi</b> atau <b>/santai</b> untuk keluar.</p>
+    <label for="panggilan">Panggilan untuk Anda (untuk sapaan)</label>
+    <input id="panggilan" placeholder="mis. Pak Ade">
     <label for="nama">Nama asisten</label>
     <input id="nama" value="Jarvis">
     <label for="suara">Suara bahasa Indonesia</label>
@@ -148,8 +155,8 @@ label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
 // Supabase URL & anon/publishable key (Project Settings → API).
 // Aman ditaruh di sini karena tabel hanya bisa diakses lewat fungsi yang
 // memeriksa kode rahasia. JANGAN isi service_role / secret key!
-const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -311,7 +318,7 @@ function tambah(teks, kelas){
 }
 
 // ===== Pengaturan =====
-for (const k of ['key','model','nama','laju','kode']) { const v = ambilLS(k); if (v) $(k).value = v; }
+for (const k of ['key','model','nama','laju','kode','panggilan']) { const v = ambilLS(k); if (v) $(k).value = v; }
 $('lajuV').textContent = (+$('laju').value).toFixed(1);
 if (!$('key').value) $('set').open = true;
 
@@ -339,7 +346,7 @@ if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged =
 $('laju').oninput = () => $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('simpan').onclick = () => {
   try { $('key').value = kunciOR(); } catch(e) { /* biarkan; pesan muncul saat dipakai */ }
-  for (const k of ['key','model','nama','laju','kode']) simpanLS(k, $(k).value.trim());
+  for (const k of ['key','model','nama','laju','kode','panggilan']) simpanLS(k, $(k).value.trim());
   simpanLS('suara', $('suara').value); simpanLS('suaraEn', $('suaraEn').value);
   tampilJudul();
   status('Pengaturan disimpan'); $('set').open = false;
@@ -465,7 +472,11 @@ function ucapkan(teks, ekspresi){
   setTimeout(() => mulaiUcap(teks), perluJeda ? 250 : 0);
 }
 function mulaiUcap(teks){
-  const u = new SpeechSynthesisUtterance(teks.replace(/[*_#`>]/g, ''));
+  let bersih = teks.replace(/[*_#`>☀️]/g, '');
+  if (MODE[mode].lang !== 'en') bersih = bersih   // agar angka enak didengar dalam bahasa Indonesia
+    .replace(/(\d)\s*[–-]\s*(\d)/g, '$1 sampai $2').replace(/±\s*/g, 'sekitar ')
+    .replace(/\bkkal\b/gi, 'kalori').replace(/(\d)\s*g\b/g, '$1 gram');
+  const u = new SpeechSynthesisUtterance(bersih);
   const inggris = MODE[mode].lang === 'en';
   const v = daftarSuara.find(x => x.name === $(inggris ? 'suaraEn' : 'suara').value);
   if (v) { u.voice = v; u.lang = v.lang; } else u.lang = inggris ? 'en-US' : 'id-ID';
@@ -594,15 +605,85 @@ function cariMode(t){
   return null;
 }
 
+// ===== Berita (lewat Edge Function "berita") =====
+const KATA_BERITA = /(berita|news|headline|kabar terbaru|lagi trending|trending|lagi rame|lagi ramai|viral hari ini)/i;
+const KAT_BERITA = [
+  ['teknologi', /(teknologi|tekno|gadget|\bai\b|kecerdasan buatan|internet|aplikasi)/i],
+  ['pendidikan', /(pendidikan|sekolah|guru|kurikulum|siswa|kampus|ujian)/i],
+  ['olahraga', /(olahraga|bola|sepak|timnas|badminton|motogp|liga)/i],
+  ['bisnis', /(bisnis|ekonomi|saham|keuangan|harga|rupiah)/i],
+  ['hiburan', /(hiburan|artis|film|musik|selebriti|seleb)/i],
+  ['kesehatan', /(kesehatan|penyakit|dokter|rumah sakit)/i],
+  ['sains', /(sains|ilmiah|antariksa|penelitian)/i],
+  ['dunia', /(dunia|internasional|luar negeri|global)/i],
+  ['nasional', /(nasional|politik|pemerintah|dpr|presiden)/i]
+];
+function permintaanBerita(t){
+  const m = t.match(/berita\s+(?:tentang|soal|mengenai|terkait|seputar)\s+(.{2,60})$/i);
+  if (m) return {q: m[1].replace(/[?.!]+$/, '').trim()};
+  for (const [k, r] of KAT_BERITA) if (r.test(t)) return {kategori: k};
+  return {kategori: 'umum'};
+}
+async function ambilBerita(arg){
+  if (!awan()) throw new Error('kode rahasia Supabase belum diisi');
+  const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/berita', {
+    method:'POST',
+    headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY, 'x-asisten-kode':$('kode').value.trim()},
+    body: JSON.stringify(arg)
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error('Berita: ' + (d.error || d.message || res.status));
+  return d;
+}
+function lalu(iso){
+  if (!iso) return '';
+  const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+  return m < 60 ? m + ' menit lalu' : m < 1440 ? Math.round(m/60) + ' jam lalu' : Math.round(m/1440) + ' hari lalu';
+}
+function kartuBerita(d, judul){
+  const box = document.createElement('div'); box.className = 'msg a berita';
+  const h = document.createElement('b'); h.textContent = judul; box.appendChild(h);
+  const ol = document.createElement('ol');
+  for (const it of d.item) {
+    const li = document.createElement('li');
+    const a = document.createElement('a'); a.href = /^https?:\/\//.test(it.link) ? it.link : '#'; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = it.judul;
+    const s = document.createElement('span'); s.className = 'small'; s.textContent = [it.sumber, lalu(it.terbit)].filter(Boolean).join(' · ');
+    li.append(a, s); ol.appendChild(li);
+  }
+  box.appendChild(ol);
+  const k = document.createElement('span'); k.className = 'small'; k.textContent = 'Sumber: ' + (d.sumber || 'RSS') + '. Ketuk judul untuk membaca lengkap.';
+  box.appendChild(k);
+  $('log').appendChild(box); $('log').scrollTop = $('log').scrollHeight;
+}
+async function konteksBerita(pesan){
+  if (!MODE[mode].pribadi || !KATA_BERITA.test(pesan)) return '';
+  if (!awan()) return 'CATATAN: berita tidak bisa diambil karena kode rahasia Supabase belum diisi. Jangan mengarang berita; sampaikan hal itu.';
+  const arg = permintaanBerita(pesan);
+  status('Mengambil berita terbaru…');
+  try {
+    const d = await ambilBerita({...arg, jumlah: 8});
+    if (!d.item?.length) return 'CATATAN: tidak ada berita yang ditemukan' + (arg.q ? ' untuk "' + arg.q + '"' : '') + '. Jangan mengarang berita; sampaikan itu.';
+    kartuBerita(d, '📰 ' + (arg.q ? 'Berita tentang ' + arg.q : 'Berita ' + arg.kategori));
+    status('Sedang berpikir…');
+    return `BERITA TERBARU (${d.sumber}, diambil ${new Date(d.diambil).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})} WIB), sudah tampil sebagai daftar di layar pengguna:\n` +
+      d.item.map((it, i) => `${i+1}. ${it.judul} — ${it.sumber}${it.terbit ? ' (' + lalu(it.terbit) + ')' : ''}`).join('\n') +
+      `\n\nATURAN BERITA: rekomendasikan 2-3 berita paling penting atau menarik HANYA dari daftar di atas, dalam 2-4 kalimat, sebut nama sumbernya. ` +
+      `Jangan menambah fakta di luar judul; untuk detail, sarankan pengguna mengetuk judul di layar. Jangan mengarang berita lain.`;
+  } catch(e) {
+    status('Berita tidak terambil: ' + e.message);
+    return 'CATATAN: berita gagal diambil (' + e.message + '). Jangan mengarang berita; bilang beritanya belum bisa diambil.';
+  }
+}
+
 // ===== Otak: OpenRouter =====
-function instruksi(sehat = ''){
+function instruksi(sehat = '', berita = ''){
   const nama = $('nama').value || 'Asisten';
   const m = MODE[mode];
   const sekarang = new Date().toLocaleString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'});
   const format = `\n\nFORMAT WAJIB / REQUIRED FORMAT: start every reply with one expression label: ` + EKS_AI.map(k => `[${k}]`).join(' ') + `.`;
   if (!m.pribadi) return m.gaya(nama) + format + `\nExample: [senang] Great job! You can say: "I like football." What sport do you like?`;
   const tahu = fakta.length ? '\n\nYang kamu ketahui tentang pengguna:\n' + fakta.map(f => '- ' + f.fakta).join('\n') : '';
-  return m.gaya(nama) + ` Sekarang ${sekarang}. Gunakan pengetahuan tentang pengguna secara wajar, jangan diumbar.` + format + `\n` +
+  return m.gaya(nama) + ` Sekarang ${sekarang}.` + (berita ? `\n\n${berita}\n` : '') + ` Gunakan pengetahuan tentang pengguna secara wajar, jangan diumbar.` + format + `\n` +
     `Jika pengguna menyampaikan fakta penting tentang dirinya yang berguna untuk percakapan berikutnya ` +
     `(nama, pekerjaan, keluarga, kebiasaan, preferensi, rencana), tambahkan di akhir: [ingat: fakta singkat sudut pandang orang ketiga]. ` +
     `Jangan mengulang fakta yang sudah diketahui. Jika pengguna meminta melupakan sesuatu, tambahkan [lupakan: kata kunci].\n` +
@@ -631,9 +712,10 @@ async function tanyaAI(pesan){
   const key = kunciOR();
   const model = $('model').value.trim() || 'openrouter/free';
   const sehat = await konteksKesehatan(pesan);
+  const berita = await konteksBerita(pesan);
   if (sehat) status('Sedang berpikir…');
   const pribadi = MODE[mode].pribadi;
-  const pesanKirim = [{role:'system', content:instruksi(sehat)}, ...(pribadi ? riwayat : riwayatTutor).slice(-16), {role:'user', content:pesan}];
+  const pesanKirim = [{role:'system', content:instruksi(sehat, berita)}, ...(pribadi ? riwayat : riwayatTutor).slice(-16), {role:'user', content:pesan}];
   let hasil = null, info = '';
   for (let coba = 1; coba <= 3 && !hasil; coba++) {
     if (coba > 1) status('Jawaban kosong, mencoba lagi (' + coba + '/3)…');
@@ -815,6 +897,87 @@ function batalDraf(diam = false){
   draf = null;
   if (!diam) ucapkan('Baik, dibatalkan.', 'netral');
 }
+// ===== Sapaan harian =====
+const KATA_SAPA = /^(sapaan|sapa saya|ringkasan|ringkasan hari ini|ringkasan pagi|briefing)[.!\s]*$/i;
+const tglLokal = (geser = 0) => { const d = new Date(Date.now() - geser*86400000); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
+const ribuan = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const rgT = (a, b) => { a = Math.round(a/10)*10; b = Math.round(b/10)*10; return a === b ? ribuan(a) : ribuan(a) + '–' + ribuan(b); };
+function labelSelisih(lo, hi){
+  if (lo >= 100) return 'di atas kebutuhan';
+  if (hi <= -100) return 'di bawah kebutuhan';
+  if (lo > -100 && hi < 100) return 'pas dengan kebutuhan';
+  return (lo + hi) / 2 < 0 ? 'sedikit di bawah kebutuhan' : 'sedikit di atas kebutuhan';
+}
+function salam(){
+  const j = new Date().getHours();
+  return j >= 4 && j < 11 ? 'Selamat pagi' : j < 15 ? 'Selamat siang' : j < 18 ? 'Selamat sore' : 'Selamat malam';
+}
+async function susunSapaan(){
+  const nama = $('panggilan').value.trim();
+  const L = [salam() + (nama ? ', ' + nama : '') + '!'];
+  let ada = false;
+  if (awan()) {
+    try {
+      const d = await rpc('asisten_kesehatan', {p_hari: 2});
+      const kemarin = tglLokal(1), hariIni = tglLokal(0);
+      const hitung = tgl => {
+        const t = {mMin:0, mMaks:0, p:0, n:0, oMin:0, oMaks:0, olah:[]};
+        for (const c of d.catatan || []) if (c.tgl === tgl) {
+          if (c.jenis === 'makan') { t.mMin += +c.kkal_min; t.mMaks += +c.kkal_maks; t.p += +c.protein_g; t.n++; }
+          else { t.oMin += +c.kkal_min; t.oMaks += +c.kkal_maks; t.olah.push(c.deskripsi); }
+        }
+        return t;
+      };
+      const k = hitung(kemarin), h = hitung(hariIni), kb = kebutuhanDasar(d.profil);
+      if (k.n) {
+        let kal = `Kemarin tercatat sekitar ${rgT(k.mMin, k.mMaks)} kkal dengan protein ±${Math.round(k.p)} g`;
+        if (kb) kal += `, ${labelSelisih(k.mMin - (kb + k.oMaks), k.mMaks - (kb + k.oMin))}`;
+        L.push(kal + '.');
+      } else L.push('Kemarin belum ada catatan makan.');
+      if (k.olah.length) L.push(`Olahraga kemarin: ${k.olah.join(', ')}.`);
+      if (h.n) L.push(`Hari ini sudah tercatat sekitar ${rgT(h.mMin, h.mMaks)} kkal.`);
+      const pr = d.profil;
+      if (pr?.target_aktif && (pr.target_kkal || pr.target_protein)) {
+        const bag = [];
+        if (pr.target_kkal) bag.push(`${ribuan(pr.target_kkal)} kkal`);
+        if (pr.target_protein) bag.push(`protein ${pr.target_protein} g`);
+        L.push(`Target hari ini: ${bag.join(' dan ')}.`);
+      } else if (kb) L.push(`Kebutuhan dasar Anda sekitar ${ribuan(kb)} kkal.`);
+      ada = true;
+    } catch(e) { console.warn('sapaan:', e.message); }
+  }
+  const hari = new Date().getDay(), jam = new Date().getHours();
+  if (hari >= 1 && hari <= 5 && jam >= 4 && jam < 13) L.push('Semangat mengajar hari ini!');
+  else L.push(ada ? 'Ada yang bisa saya bantu?' : 'Ada yang bisa saya bantu hari ini?');
+  return L.join(' ');
+}
+let sapaanTertunda = null;
+async function sapa(paksa = false){
+  if (!MODE[mode].pribadi) return;
+  const hariIni = tglLokal(0);
+  if (!paksa && (ambilLS('sapa_tgl') === hariIni || new Date().getHours() < 4)) return;
+  simpanLS('sapa_tgl', hariIni);
+  let teks = await susunSapaan();
+  let top = null;
+  if (awan()) { try { top = await ambilBerita({kategori: 'umum', jumlah: 3}); } catch(e) { console.warn('berita sapaan:', e.message); } }
+  if (top?.item?.length) teks = teks.replace(/ (Semangat mengajar hari ini!|Ada yang bisa saya bantu( hari ini)?\?)$/, ` ${top.item.length} berita teratas hari ini ada di layar. $1`);
+  tambah('☀️ ' + teks, 'a');
+  if (top?.item?.length) kartuBerita(top, '📰 Berita teratas');
+  riwayat.push({role:'assistant', content:'[senang] ' + teks});
+  setEkspresi('senang');
+  if (kunciTerbuka) ucapkan(teks, 'senang');
+  else { sapaanTertunda = {teks, kapan: Date.now()}; status('Ketuk layar untuk mendengar sapaan'); }
+}
+// iOS butuh ketukan sebelum boleh bersuara: ucapkan sapaan pada ketukan pertama
+window.addEventListener('pointerdown', e => {
+  if (!sapaanTertunda) return;
+  const s = sapaanTertunda; sapaanTertunda = null;
+  if (e.target.closest && e.target.closest('button,input,select,textarea,summary')) return; // tombol lain diutamakan
+  if (Date.now() - s.kapan > 180000 || bicara || sibuk || mendengar) return;
+  bukaKunciSuara(); setTimeout(() => ucapkan(s.teks, 'senang'), 150);
+}, {passive:true});
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sapa(); });
+
 const KATA_YA = /^(ya|iya|iyah|yap|yup|simpan|simpan saja|oke|ok|okay|betul|benar|boleh|lanjut|sip)[.!\s]*$/i;
 const KATA_BATAL = /^(batal|batalkan|tidak|nggak|enggak|ga|gak|jangan|tidak usah|nggak usah|cancel)[.!\s]*$/i;
 const KATA_KOREKSI = /(\d|porsi|centong|piring|gelas|mangkok|potong|sendok|bungkus|tanpa|pakai|bukan|cuma|hanya|setengah|tambah|kurang|besar|kecil|menit|jam|km|kemarin|nasi|lauk|minum|makan|lari|jalan)/i;
@@ -844,6 +1007,7 @@ async function kirim(pesan, dariSuara = false){
   pesan = pesan.trim();
   if (!pesan || sibuk) return;
   $('teks').value = '';
+  if (KATA_SAPA.test(pesan) && MODE[mode].pribadi) { tambah(pesan, 'u'); bukaKunciSuara(); sapa(true); return; }
   if (draf && MODE[mode].pribadi) {
     if (KATA_YA.test(pesan)) { tambah(pesan, 'u'); simpanDraf(); return; }
     if (KATA_BATAL.test(pesan)) { tambah(pesan, 'u'); batalDraf(); return; }
@@ -919,7 +1083,7 @@ $('mic').onclick = () => { bukaKunciSuara(); if (rek) { rek.stop(); return; } de
 tampilMode();
 // Aplikasi layar utama: service worker sederhana (selalu ambil versi terbaru bila online)
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
-if (MODE[mode].pribadi) muatSemua(); else { const awal = mode; mode = 'pribadi'; gantiMode(awal); }
+if (MODE[mode].pribadi) muatSemua().then(() => sapa()); else { const awal = mode; mode = 'pribadi'; gantiMode(awal); }
 }
 </script>
 </body>
