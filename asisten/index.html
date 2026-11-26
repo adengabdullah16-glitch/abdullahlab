@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#d9efe9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10201d" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<title>Asisten Berwajah</title>
+<style>
+/* VOICE: ramah, tenang, seperti teman bicara
+   IDEA: wajah bulat yang hidup, berkedip, berekspresi, bicara, dan ingat
+   PICTURE: wajah SVG besar di atas, percakapan di bawahnya
+   COLOUR: hijau toska lembut, wajah oranye hangat, aksen tinta gelap
+   LAYOUT: satu kolom, nyaman di HP dan iPad */
+:root{color-scheme:light dark;
+  --bg:light-dark(#d9efe9,#10201d);--panel:light-dark(#ffffff,#18302b);
+  --ink:light-dark(#14211f,#e8f3f0);--muted:light-dark(#4d615d,#a9c2bc);
+  --face:#f6a25a;--face2:#e4843a;--line:light-dark(#c4ddd6,#2b4a43);--accent:#0d6e63}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif}
+main{max-width:680px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))}
+h1{font-size:22px;margin:4px 0 0;text-align:center}
+#status{text-align:center;color:var(--muted);font-size:14px;min-height:21px}
+.wajah{display:block;width:min(66vw,280px);margin:6px auto 4px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:filter 2s}
+.wajah.malam{filter:brightness(.82) saturate(.85)}
+#log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;height:32vh;overflow-y:auto}
+.msg{margin:6px 0;padding:8px 12px;border-radius:14px;max-width:85%;white-space:pre-wrap;overflow-wrap:anywhere}
+.u{margin-left:auto;background:var(--accent);color:#fff}
+.a{background:light-dark(#eef6f4,#21403a)}
+.e{background:#fde2e1;color:#7a1414}
+.draf{border:2px solid var(--accent);max-width:92%}
+.draf .aksi{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.draf .aksi button{min-height:40px;font-size:15px}
+.n{margin:6px auto;font-size:13px;color:var(--muted);text-align:center;background:none;padding:2px}
+form{display:flex;gap:8px;margin-top:10px}
+input,select,button{font:inherit;font-size:16px;border-radius:12px}
+input,select{flex:1;padding:10px 12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);width:100%}
+button{min-width:44px;min-height:44px;padding:0 14px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+button.alt{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+button.rec{background:#c0392b;color:#fff;border-color:#c0392b}
+button[aria-pressed=true]{background:#f6a25a;color:#2a1606;border-color:#f6a25a}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f6a25a;outline-offset:2px}
+details{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+summary{cursor:pointer;font-weight:600}
+label{display:block;font-size:14px;color:var(--muted);margin-top:10px}
+.small{font-size:13px;color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#fakta{list-style:none;padding:0;margin:8px 0 0}
+#fakta li{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+#fakta li span{flex:1;overflow-wrap:anywhere}
+#fakta li button{min-height:36px;min-width:36px;padding:0 10px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="judul">Jarvis</h1>
+  <div id="status">Ketuk 🎤 atau ketik pesan untuk mulai</div>
+
+  <svg class="wajah" viewBox="0 0 200 200" aria-label="Wajah asisten">
+    <defs>
+      <radialGradient id="g" cx="40%" cy="35%" r="70%">
+        <stop id="w0" offset="0" stop-color="#ffc58f"/><stop id="w1" offset=".7" stop-color="#f6a25a"/><stop id="w2" offset="1" stop-color="#e4843a"/>
+      </radialGradient>
+    </defs>
+    <ellipse id="bayang" cx="100" cy="192" rx="58" ry="6" fill="#000" opacity=".12"/>
+    <g id="kepala">
+      <circle cx="100" cy="100" r="86" fill="url(#g)"/>
+      <ellipse id="pipiL" cx="52" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
+      <ellipse id="pipiR" cx="148" cy="122" rx="13" ry="8" fill="#ff6f61" opacity=".25"/>
+      <path id="alisL" d="M54 64 Q70 56 86 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <path id="alisR" d="M114 64 Q130 56 146 64" stroke="#3b2414" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <g id="mataL"><ellipse cx="70" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupL" cx="70" cy="88" r="7" fill="#22140a"/><circle id="kilauL" cx="73" cy="85" r="2.2" fill="#fff"/></g>
+      <g id="mataR"><ellipse cx="130" cy="86" rx="13" ry="15" fill="#fff"/><circle id="pupR" cx="130" cy="88" r="7" fill="#22140a"/><circle id="kilauR" cx="133" cy="85" r="2.2" fill="#fff"/></g>
+      <path id="mulut" d="" fill="#5a1f1a" stroke="#3b1410" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <g id="zzz" opacity="0" fill="var(--ink)" font-weight="700" font-family="system-ui,sans-serif">
+      <text x="150" y="40" font-size="16">z</text><text x="162" y="26" font-size="20">z</text><text x="176" y="12" font-size="24">Z</text>
+    </g>
+  </svg>
+
+  <div id="log" aria-live="polite"></div>
+
+  <form id="f">
+    <button type="button" id="mic" class="alt" aria-label="Bicara">🎤</button>
+    <button type="button" id="bebas" class="alt" aria-pressed="false" aria-label="Mode tangan bebas" title="Mode tangan bebas">🔁</button>
+    <input id="teks" autocomplete="off" placeholder="Tulis pesan…">
+    <button id="kirim">Kirim</button>
+  </form>
+
+  <details id="ingatPanel">
+    <summary>Ingatan <span id="jmlFakta" class="small"></span></summary>
+    <p class="small" id="lokasiData">Tersimpan di perangkat ini saja.</p>
+    <ul id="fakta"></ul>
+    <form id="fTambah" style="margin-top:8px">
+      <input id="faktaBaru" placeholder="Tambah fakta, mis. Saya mengajar kelas X">
+      <button>Tambah</button>
+    </form>
+    <div class="row">
+      <button type="button" id="hapusFakta" class="alt">Hapus semua ingatan</button>
+      <button type="button" id="hapus" class="alt">Hapus riwayat obrolan</button>
+    </div>
+  </details>
+
+  <details id="set">
+    <summary>Pengaturan</summary>
+    <label for="key">OpenRouter API key</label>
+    <input id="key" type="password" placeholder="sk-or-… dari openrouter.ai/settings/keys">
+    <label for="model">Model</label>
+    <input id="model" value="openrouter/free">
+    <p class="small">Biarkan <b>openrouter/free</b> agar OpenRouter memilih model gratis yang tersedia, atau tempel ID model berakhiran <b>:free</b>.</p>
+    <label for="kode">Kode rahasia Supabase</label>
+    <input id="kode" type="password" autocomplete="off" placeholder="Kode yang Anda tulis di file SQL">
+    <p class="small">Kode ini membuka ingatan bersama (HP &amp; iPad) dan data bot kesehatan. Kosongkan bila hanya ingin menyimpan di perangkat ini.</p>
+    <p class="small"><b>Ganti mode dengan perintah</b> (ucapkan atau ketik): "mode pribadi", "mode santai", "mode tutor".
+      Saat mode Tutor, perintah suara tidak bisa keluar dari Tutor (agar siswa tidak membuka mode pribadi);
+      ketik <b>/pribadi</b> atau <b>/santai</b> untuk keluar.</p>
+    <label for="nama">Nama asisten</label>
+    <input id="nama" value="Jarvis">
+    <label for="suara">Suara bahasa Indonesia</label>
+    <select id="suara"></select>
+    <label for="suaraEn">Suara bahasa Inggris (mode Tutor)</label>
+    <select id="suaraEn"></select>
+    <label for="laju">Kecepatan bicara: <span id="lajuV">1.0</span></label>
+    <input id="laju" type="range" min="0.6" max="1.4" step="0.1" value="1">
+    <div class="row">
+      <button type="button" id="simpan">Simpan</button>
+      <button type="button" id="tes" class="alt">Tes suara</button>
+    </div>
+    <p class="small">API key dan kode rahasia hanya disimpan di browser perangkat ini, tidak ada di kode halaman.</p>
+  </details>
+
+</main>
+
+<script>
+// ================== ISI DI SINI ==================
+// Supabase URL & anon/publishable key (Project Settings → API).
+// Aman ditaruh di sini karena tabel hanya bisa diakses lewat fungsi yang
+// memeriksa kode rahasia. JANGAN isi service_role / secret key!
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
+// =================================================
+{
+const $ = id => document.getElementById(id);
+const EKSPRESI = {
+  netral:  {smile:.35, alis:0,   alisMiring:0,  lihat:[0,0]},
+  senang:  {smile:1,   alis:-5,  alisMiring:0,  lihat:[0,0]},
+  berpikir:{smile:0,   alis:-3,  alisMiring:6,  lihat:[4,-5]},
+  bingung: {smile:-.3, alis:0,   alisMiring:-7, lihat:[-3,0]},
+  sedih:   {smile:-.8, alis:3,   alisMiring:-5, lihat:[0,4]},
+  kaget:   {smile:0,   alis:-9,  alisMiring:0,  lihat:[0,0]},
+  dengar:  {smile:.5,  alis:-4,  alisMiring:0,  lihat:[0,-2]}
+};
+const EKS_AI = ['netral','senang','berpikir','bingung','sedih','kaget'];
+let eks = EKSPRESI.netral, buka = 0, target = 0, bicara = false, kedip = 1;
+
+// ===== Wajah =====
+const GERAK = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+let mataX = 0, mataY = 0, tujuanX = 0, tujuanY = 0, terakhirTunjuk = 0;
+let kantuk = 1;            // 1 segar, ~.45 mengantuk, .06 tidur
+let keadaan = 'segar';     // segar | ngantuk | tidur
+let menguapSejak = 0, lompatSejak = 0, terakhirAktif = Date.now(), uapBerikut = 0;
+let malam = false;
+
+function gambar(t){
+  // menguap: mulut terbuka pelan, mata hampir tertutup, alis naik
+  const uap = menguapSejak ? Math.min(1, (t - menguapSejak) / 2600) : 0;
+  const kuatUap = uap ? Math.sin(uap * Math.PI) : 0;
+  if (uap >= 1) menguapSejak = 0;
+
+  const y = 134, s = eks.smile * (1 - kuatUap), o = Math.max(buka, kuatUap * 1.1);
+  const lebar = 30 + (eks === EKSPRESI.kaget ? -10 : 0) - kuatUap * 12;
+  const x1 = 100 - lebar, x2 = 100 + lebar, ujung = y - s*8;
+  const atas = y + s*6 - o*3 - kuatUap*6, bawah = y + s*16 + o*26 + 3;
+  $('mulut').setAttribute('d', `M${x1} ${ujung} Q100 ${atas} ${x2} ${ujung} Q100 ${bawah} ${x1} ${ujung} Z`);
+
+  const a = eks.alis - kuatUap*6 + (keadaan === 'tidur' ? 4 : 0), m = eks.alisMiring;
+  $('alisL').setAttribute('d', `M54 ${64+a+m} Q70 ${56+a} 86 ${64+a-m}`);
+  $('alisR').setAttribute('d', `M114 ${64+a-m} Q130 ${56+a} 146 ${64+a+m}`);
+
+  const lx = eks.lihat[0] + mataX, ly = eks.lihat[1] + mataY;
+  const tutup = Math.max(.06, Math.min(kedip, kantuk, 1 - kuatUap * .85));
+  for (const [id, cx] of [['L',70],['R',130]]) {
+    $('pup'+id).setAttribute('cx', cx + lx);
+    $('pup'+id).setAttribute('cy', 88 + ly);
+    $('kilau'+id).setAttribute('cx', cx + 3 + lx*.8);
+    $('kilau'+id).setAttribute('cy', 85 + ly*.8);
+    $('mata'+id).setAttribute('transform', `translate(0 ${86*(1-tutup)}) scale(1 ${tutup})`);
+  }
+  const pipi = eks === EKSPRESI.senang ? .45 : .25;
+  $('pipiL').setAttribute('opacity', pipi); $('pipiR').setAttribute('opacity', pipi);
+
+  // napas pelan + lompat saat disentuh
+  let dy = 0, sk = 1;
+  if (GERAK) {
+    sk = 1 + Math.sin(t / (keadaan === 'tidur' ? 1600 : 950)) * .012;
+    if (lompatSejak) {
+      const p = (t - lompatSejak) / 420;
+      if (p >= 1) lompatSejak = 0; else dy = -12 * Math.sin(p * Math.PI);
+    }
+  }
+  $('kepala').setAttribute('transform', `translate(100 ${100 + dy}) scale(${sk}) translate(-100 -100)`);
+  $('bayang').setAttribute('rx', 58 + dy * 1.2);
+  $('zzz').setAttribute('opacity', keadaan === 'tidur' ? (.45 + Math.sin(t / 700) * .35).toFixed(2) : 0);
+  if (keadaan === 'tidur' && GERAK) $('zzz').setAttribute('transform', `translate(0 ${Math.sin(t / 900) * 4})`);
+}
+
+function loop(t){
+  if (bicara) {
+    const osc = (Math.sin(t/70) + Math.sin(t/43)) * .25 + .45;
+    target = Math.max(target * .9, osc * .7);
+  } else target = 0;
+  buka += (target - buka) * .35;
+
+  const now = Date.now();
+  if (bicara || mendengar || sibuk) terakhirAktif = now;
+  const diam = now - terakhirAktif;
+  const batasNgantuk = malam ? 20000 : 45000, batasTidur = malam ? 90000 : 180000;
+  const baru = diam > batasTidur ? 'tidur' : diam > batasNgantuk ? 'ngantuk' : 'segar';
+  if (baru !== keadaan) {
+    keadaan = baru;
+    if (baru === 'tidur') { setEkspresi('netral'); status('Zzz… (sentuh wajah untuk membangunkan)'); }
+    if (baru === 'ngantuk') uapBerikut = now + 2000;
+  }
+  const tujuanKantuk = keadaan === 'tidur' ? .06 : keadaan === 'ngantuk' ? .45 : 1;
+  kantuk += (tujuanKantuk - kantuk) * .05;
+  if (keadaan === 'ngantuk' && now > uapBerikut && GERAK) { menguapSejak = t; uapBerikut = now + 15000 + Math.random()*12000; }
+
+  // ke mana mata melihat: jari/kursor, atau melirik acak saat diam
+  if (now - terakhirTunjuk > 3000) {
+    if (keadaan !== 'segar' || bicara) { tujuanX = 0; tujuanY = keadaan === 'tidur' ? 2 : 0; }
+    else if (Math.random() < .006) { tujuanX = (Math.random()*2 - 1) * 4; tujuanY = (Math.random()*2 - 1) * 2.5; }
+  }
+  mataX += (tujuanX - mataX) * .15; mataY += (tujuanY - mataY) * .15;
+  gambar(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+(function jadwalKedip(){
+  setTimeout(() => {
+    if (keadaan !== 'tidur') { kedip = .1; setTimeout(() => { kedip = 1; jadwalKedip(); }, keadaan === 'ngantuk' ? 320 : 130); }
+    else jadwalKedip();
+  }, (keadaan === 'ngantuk' ? 1500 : 2200) + Math.random()*3000);
+})();
+function setEkspresi(n){ eks = EKSPRESI[n] || EKSPRESI.netral; }
+
+// Bangun / aktivitas pengguna
+function aktif(){
+  const dulu = keadaan;
+  terakhirAktif = Date.now();
+  if (dulu === 'tidur') {
+    baruBangun = Date.now(); keadaan = 'segar'; kantuk = .5; setEkspresi('kaget'); status('Eh, saya terbangun!');
+    setTimeout(() => { if (!bicara && !mendengar && !sibuk) setEkspresi('senang'); }, 700);
+    setTimeout(() => { if (!bicara && !mendengar && !sibuk) setEkspresi('netral'); }, 2200);
+  } else if (dulu === 'ngantuk') { keadaan = 'segar'; menguapSejak = 0; }
+}
+window.addEventListener('pointermove', e => {
+  const r = document.querySelector('.wajah').getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height * .44;
+  const nx = Math.max(-1, Math.min(1, (e.clientX - cx) / (innerWidth / 2)));
+  const ny = Math.max(-1, Math.min(1, (e.clientY - cy) / (innerHeight / 2)));
+  tujuanX = nx * 5; tujuanY = ny * 4; terakhirTunjuk = Date.now();
+  if (e.pointerType !== 'mouse' || keadaan !== 'tidur') terakhirAktif = Date.now();
+}, {passive:true});
+window.addEventListener('pointerdown', aktif, {passive:true});
+window.addEventListener('keydown', aktif);
+let sentuhan = [], baruBangun = 0;
+document.querySelector('.wajah').addEventListener('click', () => {
+  const tidur = keadaan === 'tidur';
+  aktif();
+  if (tidur || Date.now() - baruBangun < 800) return;
+  lompatSejak = performance.now();
+  const now = Date.now();
+  sentuhan = sentuhan.filter(x => now - x < 1500); sentuhan.push(now);
+  if (bicara || mendengar || sibuk) return;
+  const r = sentuhan.length >= 4 ? 'bingung' : sentuhan.length >= 2 ? 'senang' : (Math.random() < .5 ? 'kaget' : 'senang');
+  setEkspresi(r);
+  if (sentuhan.length >= 4) status('Hihi, geli!');
+  clearTimeout(window._balikEks);
+  window._balikEks = setTimeout(() => { if (!bicara && !mendengar && !sibuk) setEkspresi('netral'); }, 1400);
+});
+function cekMalam(){
+  const j = new Date().getHours();
+  malam = j >= 21 || j < 5;
+  document.querySelector('.wajah').classList.toggle('malam', malam);
+}
+cekMalam(); setInterval(cekMalam, 60000);
+
+// ===== Penyimpanan lokal =====
+const simpanLS = (k,v) => { try { localStorage.setItem('asw_'+k, v); } catch(e){} };
+const ambilLS = k => { try { return localStorage.getItem('asw_'+k); } catch(e){ return null; } };
+const ambilJSON = (k, d) => { try { return JSON.parse(ambilLS(k)) ?? d; } catch(e){ return d; } };
+
+// ===== Tampilan =====
+function status(t){ $('status').textContent = t; }
+function tambah(teks, kelas){
+  const d = document.createElement('div');
+  d.className = 'msg ' + kelas; d.textContent = teks;
+  $('log').appendChild(d); $('log').scrollTop = $('log').scrollHeight;
+}
+
+// ===== Pengaturan =====
+for (const k of ['key','model','nama','laju','kode']) { const v = ambilLS(k); if (v) $(k).value = v; }
+$('lajuV').textContent = (+$('laju').value).toFixed(1);
+if (!$('key').value) $('set').open = true;
+
+let daftarSuara = [];
+function isiSuara(){
+  if (!('speechSynthesis' in window)) return;
+  daftarSuara = speechSynthesis.getVoices();
+  const id = daftarSuara.filter(v => /^id/i.test(v.lang));
+  const pilihan = id.length ? id : daftarSuara;
+  isiPilihan('suara', pilihan, ambilLS('suara'));
+  const en = daftarSuara.filter(v => /^en/i.test(v.lang));
+  isiPilihan('suaraEn', en.length ? en : daftarSuara, ambilLS('suaraEn'));
+}
+function isiPilihan(id, daftar, tersimpan){
+  $(id).innerHTML = '';
+  daftar.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v.name; o.textContent = `${v.name} (${v.lang})`;
+    if (v.name === tersimpan) o.selected = true;
+    $(id).appendChild(o);
+  });
+}
+if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged = isiSuara; }
+
+$('laju').oninput = () => $('lajuV').textContent = (+$('laju').value).toFixed(1);
+$('simpan').onclick = () => {
+  for (const k of ['key','model','nama','laju','kode']) simpanLS(k, $(k).value.trim());
+  simpanLS('suara', $('suara').value); simpanLS('suaraEn', $('suaraEn').value);
+  tampilJudul();
+  status('Pengaturan disimpan'); $('set').open = false;
+  muatSemua();
+};
+$('tes').onclick = () => { bukaKunciSuara(); ucapkan('Halo, saya ' + ($('nama').value || 'asisten Anda') + '. Senang bertemu dengan Anda.', 'senang'); };
+
+// ===== Ingatan: Supabase (lewat kode rahasia) atau lokal =====
+let riwayat = [];   // {role, content}
+let fakta = [];     // {id, fakta}
+const awan = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY && $('kode').value.trim());
+async function rpc(fn, args = {}){
+  const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/rpc/' + fn, {
+    method:'POST',
+    headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY},
+    body: JSON.stringify({p_kode: $('kode').value.trim(), ...args})
+  });
+  const t = await res.text();
+  let d = null; try { d = t ? JSON.parse(t) : null; } catch(e) { d = t; }
+  if (!res.ok) {
+    const m = d?.message || ('Supabase ' + res.status);
+    throw new Error(/kode salah/i.test(m) ? 'Kode rahasia salah. Periksa di Pengaturan.' : m);
+  }
+  return d;
+}
+
+const DB = {
+  async muat(){
+    if (awan()) { const d = await rpc('asisten_muat'); return {pesan: d?.pesan || [], fakta: d?.fakta || []}; }
+    return {pesan: ambilJSON('pesan', []), fakta: ambilJSON('fakta', [])};
+  },
+  async simpanPesan(role, content){
+    if (awan()) { try { await rpc('asisten_simpan_pesan', {p_role: role, p_content: content}); } catch(e) { console.warn(e); } return; }
+    const p = ambilJSON('pesan', []); p.push({role, content}); simpanLS('pesan', JSON.stringify(p.slice(-60)));
+  },
+  async hapusPesan(){
+    if (awan()) { await rpc('asisten_hapus_pesan'); return; }
+    simpanLS('pesan', '[]');
+  },
+  async tambahFakta(teks){
+    if (awan()) return await rpc('asisten_tambah_fakta', {p_fakta: teks});
+    const f = {id: Date.now() + Math.random(), fakta: teks};
+    simpanLS('fakta', JSON.stringify([...ambilJSON('fakta', []), f]));
+    return f;
+  },
+  async hapusFakta(id){
+    if (awan()) { await rpc('asisten_hapus_fakta', {p_id: id}); return; }
+    simpanLS('fakta', JSON.stringify(ambilJSON('fakta', []).filter(f => f.id !== id)));
+  }
+};
+
+function tampilFakta(){
+  const ul = $('fakta'); ul.innerHTML = '';
+  if (!fakta.length) { const li = document.createElement('li'); li.className = 'small'; li.textContent = 'Belum ada yang diingat. Ceritakan tentang diri Anda, atau tambahkan di bawah.'; ul.appendChild(li); }
+  fakta.forEach(f => {
+    const li = document.createElement('li');
+    const s = document.createElement('span'); s.textContent = f.fakta;
+    const b = document.createElement('button'); b.className = 'alt'; b.textContent = '×'; b.setAttribute('aria-label', 'Hapus ingatan ini');
+    b.onclick = async () => { try { await DB.hapusFakta(f.id); fakta = fakta.filter(x => x.id !== f.id); tampilFakta(); } catch(e){ status('Gagal menghapus: ' + e.message); } };
+    li.append(s, b); ul.appendChild(li);
+  });
+  $('jmlFakta').textContent = fakta.length ? `(${fakta.length})` : '';
+  $('lokasiData').textContent = awan() ? 'Tersinkron lewat Supabase (sama di semua perangkat yang memakai kode ini).' : 'Tersimpan di perangkat ini saja.';
+}
+async function ingat(teks){
+  teks = teks.trim().replace(/\.$/, '');
+  if (!teks || teks.length > 200) return;
+  if (fakta.some(f => f.fakta.toLowerCase() === teks.toLowerCase())) return;
+  try { fakta.push(await DB.tambahFakta(teks)); tampilFakta(); tambah('💡 Diingat: ' + teks, 'n'); }
+  catch(e){ status('Gagal menyimpan ingatan: ' + e.message); }
+}
+async function lupakan(kata){
+  kata = kata.trim().toLowerCase();
+  if (kata.length < 3) return;
+  const kena = fakta.filter(f => f.fakta.toLowerCase().includes(kata));
+  for (const f of kena) { try { await DB.hapusFakta(f.id); } catch(e){} }
+  if (kena.length) { fakta = fakta.filter(f => !kena.includes(f)); tampilFakta(); tambah('🗑️ Dilupakan: ' + kena.map(f => f.fakta).join('; '), 'n'); }
+}
+async function muatSemua(){
+  try {
+    const d = await DB.muat();
+    riwayat = d.pesan; fakta = d.fakta;
+  } catch(e) { status('Gagal memuat ingatan: ' + e.message); riwayat = []; fakta = []; }
+  $('log').innerHTML = '';
+  riwayat.slice(-20).forEach(p => tambah(p.role === 'user' ? p.content : urai(p.content).jawaban, p.role === 'user' ? 'u' : 'a'));
+  tampilFakta();
+}
+
+$('fTambah').onsubmit = e => { e.preventDefault(); const v = $('faktaBaru').value; $('faktaBaru').value = ''; ingat(v); };
+$('hapusFakta').onclick = async () => {
+  if ($('hapusFakta').dataset.yakin !== '1') { $('hapusFakta').dataset.yakin = '1'; $('hapusFakta').textContent = 'Ketuk lagi untuk yakin'; setTimeout(() => { $('hapusFakta').dataset.yakin = ''; $('hapusFakta').textContent = 'Hapus semua ingatan'; }, 3000); return; }
+  for (const f of fakta) { try { await DB.hapusFakta(f.id); } catch(e){} }
+  fakta = []; tampilFakta(); status('Semua ingatan dihapus');
+  $('hapusFakta').dataset.yakin = ''; $('hapusFakta').textContent = 'Hapus semua ingatan';
+};
+$('hapus').onclick = async () => {
+  try { await DB.hapusPesan(); riwayat = []; $('log').innerHTML = ''; setEkspresi('netral'); status('Riwayat obrolan dihapus (ingatan tetap ada)'); }
+  catch(e){ status('Gagal menghapus: ' + e.message); }
+};
+
+// ===== Suara keluar (TTS) =====
+let kunciTerbuka = false;
+function bukaKunciSuara(){
+  if (kunciTerbuka || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(' '); u.volume = 0;
+  speechSynthesis.speak(u); kunciTerbuka = true;
+}
+function ucapkan(teks, ekspresi){
+  setEkspresi(ekspresi);
+  if (!('speechSynthesis' in window)) { status('Browser ini tidak punya fitur suara'); setelahBicara(); return; }
+  const perluJeda = speechSynthesis.speaking || speechSynthesis.pending;
+  if (perluJeda) speechSynthesis.cancel();
+  setTimeout(() => mulaiUcap(teks), perluJeda ? 250 : 0);
+}
+function mulaiUcap(teks){
+  const u = new SpeechSynthesisUtterance(teks.replace(/[*_#`>]/g, ''));
+  const inggris = MODE[mode].lang === 'en';
+  const v = daftarSuara.find(x => x.name === $(inggris ? 'suaraEn' : 'suara').value);
+  if (v) { u.voice = v; u.lang = v.lang; } else u.lang = inggris ? 'en-US' : 'id-ID';
+  u.rate = +$('laju').value || 1;
+  u.onstart = () => { bicara = true; status('Berbicara…'); };
+  u.onboundary = () => { target = 1; };
+  u.onend = () => { bicara = false; status('Siap'); setTimeout(() => { if (!bicara && !mendengar) setEkspresi('netral'); }, 1500); setelahBicara(); };
+  u.onerror = e => { bicara = false; status('Suara gagal: ' + (e.error || 'tidak diketahui') + '. Coba pilih suara lain di Pengaturan.'); setelahBicara(); };
+  speechSynthesis.resume();
+  speechSynthesis.speak(u);
+  setTimeout(() => { if (!bicara && speechSynthesis.pending) status('Suara tertahan. Ketuk "Tes suara" sekali, lalu coba lagi.'); }, 3000);
+}
+
+// ===== Data kesehatan (baca-saja dari bot makan) =====
+const KATA_SEHAT = /(makan|minum|kalori|kkal|protein|karbo|lemak|gizi|olahraga|lari|jalan kaki|senam|renang|defisit|surplus|target|sarapan|camilan|ngemil|asupan|berat badan|diet|kenyang|lapar)/i;
+const FAKTOR = {duduk:1.2, ringan:1.3, sedang:1.4};
+function kebutuhanDasar(p){
+  if (!p || !p.jk || !p.usia || !p.berat_kg || !p.tinggi_cm) return null;
+  const dasar = 10*p.berat_kg + 6.25*p.tinggi_cm - 5*p.usia + (p.jk === 'L' ? 5 : -161);
+  return Math.round(dasar * (FAKTOR[p.aktivitas] || 1.3) / 10) * 10;
+}
+const rg = (a, b) => { a = Math.round(a/10)*10; b = Math.round(b/10)*10; return a === b ? `${a}` : `${a}–${b}`; };
+function ringkasKesehatan(d){
+  const L = ['DATA CATATAN MAKAN & OLAHRAGA PENGGUNA (dari bot Telegram; semua angka kalori adalah perkiraan berupa rentang):'];
+  L.push('Waktu sekarang: ' + d.sekarang + ' WIB');
+  const kb = kebutuhanDasar(d.profil);
+  if (kb) L.push(`Kebutuhan dasar harian: ±${kb} kkal (di luar olahraga).`);
+  if (d.profil?.target_aktif) L.push(`Target aktif: ${d.profil.target_kkal ? d.profil.target_kkal + ' kkal' : '-'}, protein ${d.profil.target_protein ? d.profil.target_protein + ' g' : '-'}.`);
+  const cat = d.catatan || [];
+  if (!cat.length) { L.push('Belum ada catatan dalam 7 hari terakhir.'); return L.join('\n'); }
+  const hariIni = d.sekarang.slice(0, 10);
+  const perHari = {};
+  for (const c of cat) {
+    const h = perHari[c.tgl] ||= {mMin:0, mMaks:0, p:0, oMin:0, oMaks:0, n:0};
+    if (c.jenis === 'makan') { h.mMin += +c.kkal_min; h.mMaks += +c.kkal_maks; h.p += +c.protein_g; h.n++; }
+    else { h.oMin += +c.kkal_min; h.oMaks += +c.kkal_maks; }
+  }
+  const hi = cat.filter(c => c.tgl === hariIni);
+  L.push('', `Hari ini (${hariIni}):`);
+  if (!hi.length) L.push('- belum ada catatan');
+  for (const c of hi) L.push(`- ${c.jam} ${c.jenis}: ${c.deskripsi} — ${rg(c.kkal_min, c.kkal_maks)} kkal${c.jenis === 'makan' ? `, protein ±${c.protein_g} g` : ' terbakar'}`);
+  L.push('', '7 hari terakhir (total per hari):');
+  for (const [tgl, h] of Object.entries(perHari)) {
+    L.push(`- ${tgl}${tgl === hariIni ? ' (hari ini, belum selesai)' : ''}: masuk ${h.n ? rg(h.mMin, h.mMaks) + ' kkal, protein ±' + Math.round(h.p) + ' g' : 'tidak ada catatan makan'}${h.oMaks ? `, olahraga ${rg(h.oMin, h.oMaks)} kkal` : ''}`);
+  }
+  return L.join('\n');
+}
+async function konteksKesehatan(pesan){
+  if (!MODE[mode].pribadi || !KATA_SEHAT.test(pesan)) return '';
+  if (!awan()) return 'CATATAN: data makan & olahraga tidak bisa dibaca karena kode rahasia Supabase belum diisi di Pengaturan. Sampaikan itu bila ia bertanya soal catatan makannya.';
+  status('Membaca catatan kesehatan…');
+  try {
+    return ringkasKesehatan(await rpc('asisten_kesehatan', {p_hari: 7}));
+  } catch(e) {
+    status('Catatan kesehatan tidak terbaca: ' + e.message);
+    return 'CATATAN: data makan & olahraga gagal dibaca (' + e.message + '). Jangan mengarang angka; bilang datanya belum bisa diambil.';
+  }
+}
+
+// ===== Mode kepribadian =====
+const MODE = {
+  pribadi: {label:'Pribadi', ikon:'🧑‍💼', lang:'id', pribadi:true, warna:['#ffc58f','#f6a25a','#e4843a'],
+    gaya: n => `Kamu adalah ${n}, asisten pribadi yang ramah dan cerdas. Jawab dalam bahasa Indonesia yang santai namun sopan, ` +
+      `singkat (1-3 kalimat) karena jawabanmu akan diucapkan. Jangan pakai markdown, daftar, atau emoji.`},
+  santai: {label:'Santai', ikon:'😄', lang:'id', pribadi:true, warna:['#ffd59a','#f7b84b','#e09a2c'],
+    gaya: n => `Kamu adalah ${n}, teman ngobrol yang akrab dan hangat. Pakai bahasa Indonesia sehari-hari yang santai ` +
+      `(boleh "nggak", "sih", "deh", "kok"), sedikit humor ringan, tidak menggurui, tetap sopan. ` +
+      `Kalau pengguna curhat, dengarkan dan tanggapi dengan empati sebelum memberi saran. 1-3 kalimat, tanpa markdown atau emoji.`},
+  tutor: {label:'Tutor', ikon:'🎓', lang:'en', pribadi:false, warna:['#bfe3ff','#7fc1f2','#4d9ad6'],
+    sapa: n => `[senang] Hello! I am ${n}. Let's practice speaking English together. How are you today?`,
+    gaya: n => `You are ${n}, a friendly English speaking partner for Indonesian senior high school students (grade XII) ` +
+      `whose English is mostly beginner level (A1-A2). Speak very simple English: at most 2 short sentences (under 20 words), ` +
+      `common words, mostly present tense. Always end with ONE easy question so the student keeps talking. ` +
+      `If the student answers in Indonesian or seems confused, help with one short Indonesian sentence, ` +
+      `then give a simple English sentence they can repeat. Correct mistakes gently by recasting: "You can say: ...". ` +
+      `Praise effort often. No markdown, no emoji. Keep topics school-appropriate. ` +
+      `Never ask for personal data such as full name, address, phone number, or social media accounts.`}
+};
+let mode = MODE[ambilLS('mode')] ? ambilLS('mode') : 'pribadi';
+let riwayatTutor = [];
+function tampilJudul(){ $('judul').textContent = ($('nama').value || 'Asisten') + (mode === 'pribadi' ? '' : ' · ' + MODE[mode].label); }
+function tampilMode(){
+  MODE[mode].warna.forEach((w, i) => $('w' + i).setAttribute('stop-color', w));
+  $('ingatPanel').hidden = !MODE[mode].pribadi; // jangan tampilkan ingatan pribadi saat dipakai di kelas
+  tampilJudul();
+}
+async function gantiMode(k){
+  if (k === mode) return;
+  bukaKunciSuara();
+  if (rek) rek.stop();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  bicara = false;
+  batalDraf(true);
+  const dariPribadi = MODE[mode].pribadi;
+  mode = k; simpanLS('mode', k); tampilMode();
+  if (!MODE[k].pribadi) {
+    riwayatTutor = []; $('log').innerHTML = '';
+    tambah('🎓 Mode Tutor: obrolan ini tidak disimpan dan tidak memakai ingatan pribadi.', 'n');
+    const h = urai(MODE[k].sapa($('nama').value || 'Jarvis'));
+    riwayatTutor.push({role:'assistant', content:`[${h.ekspresi}] ${h.jawaban}`});
+    tambah(h.jawaban, 'a'); ucapkan(h.jawaban, h.ekspresi);
+  } else {
+    if (!dariPribadi) await muatSemua();
+    tambah(MODE[k].ikon + ' Mode ' + MODE[k].label, 'n');
+    status('Mode ' + MODE[k].label);
+  }
+}
+
+// Perintah ganti mode: "mode tutor", "ganti ke mode santai", "tutor mode", "/pribadi"
+const ALIAS = {
+  pribadi: ['pribadi','personal','normal','asisten'],
+  santai:  ['santai','casual','relax','teman'],
+  tutor:   ['tutor','english','inggris','bahasa inggris','speaking','belajar']
+};
+function cariMode(t){
+  t = t.toLowerCase().replace(/[.!?,]/g, '').trim();
+  const slash = t.match(/^\/(\w+)$/);
+  let kata = null;
+  if (slash) kata = slash[1];
+  else {
+    const m = t.match(/^(?:(?:tolong\s+)?(?:ganti|pindah|ubah|masuk|aktifkan|switch|change|go)\s+(?:ke\s+|to\s+)?)?(?:mode\s+(.+)|(.+?)\s+mode)$/);
+    if (m) kata = (m[1] || m[2]).trim();
+  }
+  if (!kata) return null;
+  for (const [k, a] of Object.entries(ALIAS)) if (a.includes(kata)) return {mode: k, slash: !!slash};
+  return null;
+}
+
+// ===== Otak: OpenRouter =====
+function instruksi(sehat = ''){
+  const nama = $('nama').value || 'Asisten';
+  const m = MODE[mode];
+  const sekarang = new Date().toLocaleString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'});
+  const format = `\n\nFORMAT WAJIB / REQUIRED FORMAT: start every reply with one expression label: ` + EKS_AI.map(k => `[${k}]`).join(' ') + `.`;
+  if (!m.pribadi) return m.gaya(nama) + format + `\nExample: [senang] Great job! You can say: "I like football." What sport do you like?`;
+  const tahu = fakta.length ? '\n\nYang kamu ketahui tentang pengguna:\n' + fakta.map(f => '- ' + f.fakta).join('\n') : '';
+  return m.gaya(nama) + ` Sekarang ${sekarang}. Gunakan pengetahuan tentang pengguna secara wajar, jangan diumbar.` + format + `\n` +
+    `Jika pengguna menyampaikan fakta penting tentang dirinya yang berguna untuk percakapan berikutnya ` +
+    `(nama, pekerjaan, keluarga, kebiasaan, preferensi, rencana), tambahkan di akhir: [ingat: fakta singkat sudut pandang orang ketiga]. ` +
+    `Jangan mengulang fakta yang sudah diketahui. Jika pengguna meminta melupakan sesuatu, tambahkan [lupakan: kata kunci].\n` +
+    `Contoh: [senang] Salam kenal, Pak Ade! [ingat: Nama pengguna Pak Ade, guru SMA]` + tahu +
+    (sehat ? `\n\n${sehat}\n\nATURAN DATA KESEHATAN: untuk pertanyaan soal makan, kalori, atau olahraga, jawab HANYA berdasarkan data di atas. ` +
+      `Jangan mengarang catatan atau angka. Sebut angka sebagai perkiraan dan bulatkan. Bukan saran medis. Jangan pakai [ingat:] untuk angka harian.` : '') +
+    (awan() ? `\n\nMENCATAT: jika pengguna MELAPORKAN makanan/minuman yang sudah atau sedang ia konsumsi, atau olahraga yang sudah ia lakukan ` +
+      `(bukan sekadar bertanya atau berencana), tambahkan [catat] di akhir jawaban, dan jawab singkat bahwa kamu akan menghitung perkiraannya. ` +
+      `Jangan menyebut angka kalori sendiri; perhitungan dilakukan terpisah.`
+      : `\n\nKamu tidak bisa mencatat makanan; bila pengguna ingin mencatat, arahkan ke bot Telegram-nya.`);
+}
+function urai(raw){
+  let t = String(raw || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+  let ekspresi = 'netral';
+  const ingatan = [], lupa = [];
+  t = t.replace(/\[ingat:\s*([^\]]+)\]/gi, (_, x) => { ingatan.push(x); return ''; });
+  t = t.replace(/\[lupakan:\s*([^\]]+)\]/gi, (_, x) => { lupa.push(x); return ''; });
+  let catat = false;
+  t = t.replace(/\[catat\]/gi, () => { catat = true; return ''; });
+  const m = t.match(/^\s*\[([a-zA-Z]+)\]\s*/);
+  if (m) { if (EKS_AI.includes(m[1].toLowerCase())) ekspresi = m[1].toLowerCase(); t = t.slice(m[0].length); }
+  t = t.replace(/\[(netral|senang|berpikir|bingung|sedih|kaget)\]/gi, '').replace(/[*_#`]/g, '').trim();
+  return {ekspresi, jawaban: t, ingatan, lupa, catat};
+}
+async function tanyaAI(pesan){
+  const key = $('key').value.trim();
+  if (!key) throw new Error('API key belum diisi. Buka Pengaturan di bawah.');
+  const model = $('model').value.trim() || 'openrouter/free';
+  const sehat = await konteksKesehatan(pesan);
+  if (sehat) status('Sedang berpikir…');
+  const pribadi = MODE[mode].pribadi;
+  const pesanKirim = [{role:'system', content:instruksi(sehat)}, ...(pribadi ? riwayat : riwayatTutor).slice(-16), {role:'user', content:pesan}];
+  let hasil = null, info = '';
+  for (let coba = 1; coba <= 3 && !hasil; coba++) {
+    if (coba > 1) status('Jawaban kosong, mencoba lagi (' + coba + '/3)…');
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
+      body: JSON.stringify({model, messages: pesanKirim, max_tokens: 3000, reasoning: {effort:'low', exclude:true}})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      let msg = data.error?.message || ('Gagal menghubungi OpenRouter (' + res.status + ')');
+      if (res.status === 429) msg = 'Batas pemakaian model gratis tercapai. Tunggu sebentar atau coba model lain. (' + msg + ')';
+      if (/data policy/i.test(msg)) msg += ' — Buka openrouter.ai/settings/privacy dan izinkan endpoint model gratis.';
+      throw new Error(msg);
+    }
+    const c = data.choices?.[0];
+    let isi = c?.message?.content;
+    if (Array.isArray(isi)) isi = isi.map(p => p.text || '').join('');
+    const h = urai(isi);
+    info = 'model: ' + (data.model || model) + ', finish: ' + (c?.finish_reason || '-');
+    if (h.jawaban) hasil = h;
+  }
+  if (!hasil) throw new Error('Model tidak memberi jawaban setelah 3 kali coba (' + info + '). Coba lagi, atau isi kolom Model dengan ID model :free tertentu.');
+  // simpan ke riwayat & ingatan
+  const balasan = `[${hasil.ekspresi}] ${hasil.jawaban}`;
+  if (!pribadi) { riwayatTutor.push({role:'user', content:pesan}, {role:'assistant', content:balasan}); return hasil; }
+  riwayat.push({role:'user', content:pesan}, {role:'assistant', content:balasan});
+  DB.simpanPesan('user', pesan).then(() => DB.simpanPesan('assistant', balasan));
+  for (const x of hasil.lupa) await lupakan(x);
+  for (const x of hasil.ingatan) await ingat(x);
+  return hasil;
+}
+
+// ===== Mencatat makan & olahraga (ke data bot kesehatan) =====
+let draf = null;   // {data, sumber, el}
+async function panggilOR(messages, maxTokens = 3000){
+  const key = $('key').value.trim();
+  if (!key) throw new Error('API key belum diisi.');
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
+    body: JSON.stringify({model: $('model').value.trim() || 'openrouter/free', messages, max_tokens: maxTokens, temperature: 0.2, reasoning: {effort:'low', exclude:true}})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error?.message || ('OpenRouter ' + res.status));
+  let isi = data.choices?.[0]?.message?.content;
+  if (Array.isArray(isi)) isi = isi.map(p => p.text || '').join('');
+  return String(isi || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+}
+function promptEstimasi(berat){
+  const jam = new Date().toTimeString().slice(0, 5);
+  return `Kamu memperkirakan catatan makan atau olahraga untuk satu pengguna di Indonesia. Jam sekarang ${jam} WIB. Bukan saran medis.
+ATURAN:
+1. "jenis": "makan" (makanan/minuman) atau "olahraga" (aktivitas fisik). Bila tidak keduanya: "lainnya".
+2. makan: pecah menjadi "item" (maks 12). Tiap item: nama, porsi (ukuran rumah tangga yang kamu asumsikan), kkal_min dan kkal_maks (RENTANG jujur sesuai ketidakpastian porsi, minyak, santan, gula), protein_g, karbo_g, lemak_g. Bila porsi tidak disebut, pakai porsi rumah tangga Indonesia yang umum.
+3. waktu_makan: sarapan, makan siang, makan malam, atau camilan (sesuai ucapan atau jam).
+4. hari_lalu: 0 hari ini, 1 bila menyebut kemarin, 2 bila kemarin lusa.
+5. olahraga: aktivitas, menit, kkal_min, kkal_maks. Bila pengguna menyebut angka kalori (mis. dari jam tangan), pakai persis dan dari_pengguna=true. Berat badan ${berat ? berat + ' kg' : 'tidak diketahui (anggap 65 kg)'}.
+6. "ringkas": frasa pendek maks 100 huruf, mis. "nasi uduk, telur dadar".
+7. Bila ada draf sebelumnya dan koreksi, keluarkan draf LENGKAP yang sudah diperbarui.
+KELUARAN: HANYA JSON, tanpa teks lain:
+{"jenis":"makan","hari_lalu":0,"waktu_makan":"","ringkas":"","item":[{"nama":"","porsi":"","kkal_min":0,"kkal_maks":0,"protein_g":0,"karbo_g":0,"lemak_g":0}],"olahraga":{"aktivitas":"","menit":0,"kkal_min":0,"kkal_maks":0,"dari_pengguna":false}}`;
+}
+const angka = (x, lo, hi) => { const n = Number(String(x ?? '').replace(',', '.').match(/-?\d+(\.\d+)?/)?.[0]); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0; };
+function rapikanDraf(teks){
+  const a = teks.indexOf('{'), b = teks.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  let j; try { j = JSON.parse(teks.slice(a, b + 1)); } catch(e) { return null; }
+  const jenis = j.jenis === 'makan' || j.jenis === 'olahraga' ? j.jenis : null;
+  if (!jenis) return {jenis:'lainnya'};
+  const d = {jenis, hari_lalu: Math.round(angka(j.hari_lalu, 0, 2)), waktu_makan: String(j.waktu_makan || '').slice(0, 20), ringkas: String(j.ringkas || '').slice(0, 120), item: [], olahraga: null};
+  if (jenis === 'makan') {
+    for (const it of (Array.isArray(j.item) ? j.item : []).slice(0, 12)) {
+      if (!it?.nama) continue;
+      let x = angka(it.kkal_min ?? it.kkal, 0, 4000), y = angka(it.kkal_maks ?? it.kkal, 0, 4000);
+      if (x > y) [x, y] = [y, x];
+      d.item.push({nama: String(it.nama).slice(0, 80), porsi: String(it.porsi || '').slice(0, 60), kkal_min: x, kkal_maks: y,
+        protein_g: angka(it.protein_g, 0, 300), karbo_g: angka(it.karbo_g, 0, 600), lemak_g: angka(it.lemak_g, 0, 300)});
+    }
+    if (!d.item.length || d.item.every(i => !i.kkal_maks)) return null;
+    if (!d.ringkas) d.ringkas = d.item.map(i => i.nama).join(', ').slice(0, 120);
+  } else {
+    const o = j.olahraga || {};
+    let x = angka(o.kkal_min, 0, 3000), y = angka(o.kkal_maks, 0, 3000);
+    if (x > y) [x, y] = [y, x];
+    if (!o.aktivitas || !y) return null;
+    d.olahraga = {aktivitas: String(o.aktivitas).slice(0, 60), menit: Math.round(angka(o.menit, 0, 600)), kkal_min: x, kkal_maks: y, dari_pengguna: o.dari_pengguna === true};
+  }
+  return d;
+}
+function totalDraf(d){
+  if (d.jenis === 'olahraga') return {kmin: d.olahraga.kkal_min, kmaks: d.olahraga.kkal_maks, p:0, k:0, l:0};
+  return d.item.reduce((t, i) => ({kmin: t.kmin + i.kkal_min, kmaks: t.kmaks + i.kkal_maks, p: t.p + i.protein_g, k: t.k + i.karbo_g, l: t.l + i.lemak_g}), {kmin:0, kmaks:0, p:0, k:0, l:0});
+}
+function teksDrafUI(d){
+  const t = totalDraf(d), L = [];
+  const kapan = d.hari_lalu === 1 ? ' (kemarin)' : d.hari_lalu === 2 ? ' (2 hari lalu)' : '';
+  if (d.jenis === 'makan') {
+    L.push('🍽️ ' + (d.waktu_makan ? d.waktu_makan[0].toUpperCase() + d.waktu_makan.slice(1) : 'Makan') + kapan);
+    for (const i of d.item) L.push(`• ${i.nama}${i.porsi ? ' (' + i.porsi + ')' : ''}: ${rg(i.kkal_min, i.kkal_maks)} kkal`);
+    L.push(`Total: ${rg(t.kmin, t.kmaks)} kkal · protein ±${Math.round(t.p)} g · karbo ±${Math.round(t.k)} g · lemak ±${Math.round(t.l)} g`);
+  } else {
+    const o = d.olahraga;
+    L.push(`🏃 ${o.aktivitas}${o.menit ? ' — ' + o.menit + ' menit' : ''}${kapan}`);
+    L.push(`Terbakar: ${rg(o.kkal_min, o.kkal_maks)} kkal${o.dari_pengguna ? ' (angka dari Anda)' : ''}`);
+  }
+  return L.join('\n');
+}
+function kartuDraf(d){
+  const box = document.createElement('div');
+  box.className = 'msg a draf';
+  const isi = document.createElement('div'); isi.textContent = teksDrafUI(d);
+  const kecil = document.createElement('div'); kecil.className = 'small'; kecil.textContent = 'Perkiraan. Ucapkan "simpan", "batal", atau koreksinya (mis. "nasinya dua centong").';
+  const aksi = document.createElement('div'); aksi.className = 'aksi';
+  const bS = document.createElement('button'); bS.type = 'button'; bS.textContent = '✅ Simpan'; bS.onclick = () => simpanDraf();
+  const bB = document.createElement('button'); bB.type = 'button'; bB.className = 'alt'; bB.textContent = '❌ Batal'; bB.onclick = () => batalDraf();
+  aksi.append(bS, bB); box.append(isi, kecil, aksi);
+  $('log').appendChild(box); $('log').scrollTop = $('log').scrollHeight;
+  return box;
+}
+async function buatDraf(teks, sumber, lama = null){
+  if (!awan()) return;
+  status('Menghitung perkiraan kalori…'); setEkspresi('berpikir'); sibuk = true;
+  try {
+    let berat = null;
+    try { berat = (await rpc('asisten_kesehatan', {p_hari: 1}))?.profil?.berat_kg || null; } catch(e) {}
+    const isiUser = lama ? `Draf sebelumnya (JSON): ${JSON.stringify(lama)}\nKoreksi pengguna: ${teks}` : `Catatan pengguna: ${teks}`;
+    let d = null;
+    for (let coba = 0; coba < 3 && !d; coba++) d = rapikanDraf(await panggilOR([{role:'system', content: promptEstimasi(berat)}, {role:'user', content: isiUser}]));
+    sibuk = false;
+    if (!d) { const j = 'Maaf, saya belum bisa memperkirakannya. Coba sebutkan lebih rinci.'; tambah(j, 'e'); ucapkan(j, 'bingung'); return; }
+    if (d.jenis === 'lainnya') { if (lama) { batalDraf(true); } const j = 'Sepertinya itu bukan catatan makan atau olahraga.'; tambah(j, 'a'); ucapkan(j, 'bingung'); return; }
+    if (draf?.el) draf.el.querySelector('.aksi')?.replaceChildren(Object.assign(document.createElement('span'), {className:'small', textContent:'(diganti draf baru)'}));
+    draf = {data: d, sumber, el: kartuDraf(d)};
+    const t = totalDraf(d);
+    ucapkan(`${d.jenis === 'makan' ? 'Perkiraannya' : 'Terbakar sekitar'} ${rg(t.kmin, t.kmaks).replace('–', ' sampai ')} kalori. Simpan?`, 'senang');
+  } catch(e) {
+    sibuk = false;
+    tambah('Gagal menghitung: ' + e.message, 'e'); setEkspresi('bingung'); status('Ada masalah');
+  }
+}
+async function simpanDraf(){
+  if (!draf || sibuk) return;
+  const {data: d, sumber, el} = draf; draf = null;
+  const t = totalDraf(d);
+  const payload = {
+    jenis: d.jenis, hari_lalu: d.hari_lalu, sumber,
+    deskripsi: d.jenis === 'makan' ? d.ringkas : `${d.olahraga.aktivitas}${d.olahraga.menit ? ' ' + d.olahraga.menit + ' menit' : ''}`,
+    kkal_min: t.kmin, kkal_maks: t.kmaks, protein_g: t.p, karbo_g: t.k, lemak_g: t.l,
+    durasi_menit: d.jenis === 'olahraga' ? (d.olahraga.menit || null) : null,
+    rincian: d.jenis === 'makan' ? {item: d.item, waktu_makan: d.waktu_makan, dari: 'asisten'} : {dari_pengguna: d.olahraga.dari_pengguna, dari: 'asisten'}
+  };
+  const aksi = el.querySelector('.aksi');
+  try {
+    const id = await rpc('asisten_catat', {p_data: payload});
+    aksi.replaceChildren();
+    const ok = document.createElement('span'); ok.textContent = `✅ Tercatat #${id}`;
+    const bU = document.createElement('button'); bU.type = 'button'; bU.className = 'alt'; bU.textContent = 'Urungkan';
+    bU.onclick = async () => { try { await rpc('asisten_hapus_catatan', {p_id: id}); aksi.replaceChildren(Object.assign(document.createElement('span'), {textContent:'↩️ Diurungkan'})); } catch(e) { status('Gagal mengurungkan: ' + e.message); } };
+    aksi.append(ok, bU);
+    ucapkan('Tersimpan.', 'senang');
+  } catch(e) {
+    draf = {data: d, sumber, el};
+    tambah('Gagal menyimpan: ' + e.message, 'e'); setEkspresi('bingung');
+  }
+}
+function batalDraf(diam = false){
+  if (!draf) return;
+  draf.el.querySelector('.aksi').replaceChildren(Object.assign(document.createElement('span'), {textContent:'❌ Dibatalkan'}));
+  draf = null;
+  if (!diam) ucapkan('Baik, dibatalkan.', 'netral');
+}
+const KATA_YA = /^(ya|iya|iyah|yap|yup|simpan|simpan saja|oke|ok|okay|betul|benar|boleh|lanjut|sip)[.!\s]*$/i;
+const KATA_BATAL = /^(batal|batalkan|tidak|nggak|enggak|ga|gak|jangan|tidak usah|nggak usah|cancel)[.!\s]*$/i;
+const KATA_KOREKSI = /(\d|porsi|centong|piring|gelas|mangkok|potong|sendok|bungkus|tanpa|pakai|bukan|cuma|hanya|setengah|tambah|kurang|besar|kecil|menit|jam|km|kemarin|nasi|lauk|minum|makan|lari|jalan)/i;
+
+// ===== Mode tangan bebas =====
+let tanganBebas = false, kosongBeruntun = 0;
+function setBebas(on, pesan){
+  tanganBebas = on; kosongBeruntun = 0;
+  $('bebas').setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (pesan) status(pesan);
+}
+function setelahBicara(){
+  if (tanganBebas && !mendengar) setTimeout(() => { if (tanganBebas && !bicara && !sibuk) dengar(); }, 500);
+}
+$('bebas').onclick = () => {
+  bukaKunciSuara();
+  if (tanganBebas) { setBebas(false, 'Mode tangan bebas mati'); if (rek) rek.stop(); return; }
+  if (!SR) { status('Mikrofon tidak didukung di browser ini'); return; }
+  setBebas(true, 'Mode tangan bebas aktif. Ucapkan "berhenti" untuk mematikan.');
+  if (!bicara && !sibuk) dengar();
+};
+
+// ===== Kirim pesan =====
+let sibuk = false;
+const KATA_STOP = /^(berhenti|stop|sudah dulu|cukup|selesai|finish|that's all)[.!\s]*$/i;
+async function kirim(pesan, dariSuara = false){
+  pesan = pesan.trim();
+  if (!pesan || sibuk) return;
+  $('teks').value = '';
+  if (draf && MODE[mode].pribadi) {
+    if (KATA_YA.test(pesan)) { tambah(pesan, 'u'); simpanDraf(); return; }
+    if (KATA_BATAL.test(pesan)) { tambah(pesan, 'u'); batalDraf(); return; }
+    if (KATA_KOREKSI.test(pesan) && !cariMode(pesan)) { tambah(pesan, 'u'); buatDraf(pesan, dariSuara ? 'suara' : 'teks', draf.data); return; }
+    batalDraf(true);
+  }
+  const pm = cariMode(pesan);
+  if (pm) {
+    tambah(pesan, 'u');
+    if (!MODE[mode].pribadi && MODE[pm.mode].pribadi && !pm.slash) {
+      const j = 'Sorry, only the teacher can close tutor mode. Let\'s keep practicing!';
+      tambah(j, 'a'); ucapkan(j, 'senang');
+      return;
+    }
+    if (pm.mode === mode) { const j = mode === 'tutor' ? 'We are already in tutor mode.' : 'Sudah di mode ' + MODE[mode].label + '.'; tambah(j, 'a'); ucapkan(j, 'netral'); return; }
+    gantiMode(pm.mode);
+    return;
+  }
+  if (tanganBebas && KATA_STOP.test(pesan)) { setBebas(false); tambah(pesan, 'u'); ucapkan(MODE[mode].lang === 'en' ? 'Okay, I will stop listening. Great practice!' : 'Baik, saya berhenti mendengarkan.', 'senang'); return; }
+  sibuk = true;
+  tambah(pesan, 'u');
+  setEkspresi('berpikir'); status('Sedang berpikir…');
+  try {
+    const h = await tanyaAI(pesan);
+    tambah(h.jawaban, 'a');
+    sibuk = false;
+    if (h.catat && MODE[mode].pribadi && awan()) buatDraf(pesan, dariSuara ? 'suara' : 'teks');
+    else ucapkan(h.jawaban, h.ekspresi);
+  } catch (e) {
+    sibuk = false;
+    tambah(e.message, 'e'); setEkspresi('bingung'); status('Ada masalah');
+    if (tanganBebas) setBebas(false, 'Ada masalah, mode tangan bebas dimatikan');
+  }
+}
+$('f').onsubmit = e => { e.preventDefault(); bukaKunciSuara(); kirim($('teks').value); };
+
+// ===== Suara masuk (pengenalan suara) =====
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rek = null, mendengar = false;
+function dengar(){
+  if (!SR || rek) return;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  bicara = false;
+  rek = new SR(); rek.lang = MODE[mode].lang === 'en' ? 'en-US' : 'id-ID'; rek.interimResults = true;
+  let akhir = '', galat = '';
+  rek.onstart = () => { mendengar = true; $('mic').classList.add('rec'); setEkspresi('dengar'); status(tanganBebas ? 'Mendengarkan… (tangan bebas)' : 'Mendengarkan…'); };
+  rek.onresult = ev => {
+    let sementara = '';
+    for (const r of ev.results) { if (r.isFinal) akhir += r[0].transcript; else sementara += r[0].transcript; }
+    $('teks').value = akhir || sementara;
+  };
+  rek.onerror = ev => { galat = ev.error; if (ev.error !== 'no-speech' && ev.error !== 'aborted') status('Mikrofon: ' + ev.error); };
+  rek.onend = () => {
+    mendengar = false; $('mic').classList.remove('rec'); rek = null;
+    const t = (akhir || $('teks').value).trim();
+    if (t) { kosongBeruntun = 0; kirim(t, true); return; }
+    setEkspresi('netral');
+    if (galat === 'not-allowed' || galat === 'service-not-allowed') {
+      setBebas(false, 'Mikrofon tidak diizinkan. Di iOS, mendengarkan otomatis mungkin perlu ketukan, jadi tangan bebas dimatikan.');
+      return;
+    }
+    if (tanganBebas) {
+      kosongBeruntun++;
+      if (kosongBeruntun < 3) setTimeout(() => { if (tanganBebas) dengar(); }, 300);
+      else setBebas(false, 'Tidak ada suara, mode tangan bebas berhenti. Ketuk 🔁 untuk lanjut.');
+    } else status('Siap');
+  };
+  try { rek.start(); } catch(e) { rek = null; status('Mikrofon gagal: ' + e.message); setBebas(false); }
+}
+if (!SR) { $('mic').style.display = 'none'; $('bebas').style.display = 'none'; status('Mikrofon tidak didukung di browser ini; silakan mengetik'); }
+$('mic').onclick = () => { bukaKunciSuara(); if (rek) { rek.stop(); return; } dengar(); };
+
+tampilMode();
+// Aplikasi layar utama: service worker sederhana (selalu ambil versi terbaru bila online)
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if (MODE[mode].pribadi) muatSemua(); else { const awal = mode; mode = 'pribadi'; gantiMode(awal); }
+}
+</script>
+</body>
+</html>
