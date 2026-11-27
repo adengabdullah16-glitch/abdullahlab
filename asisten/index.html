@@ -281,6 +281,9 @@ body.hud .berita a{color:#e9fbff}
     <select id="suara"></select>
     <label for="suaraEn">Suara bahasa Inggris (mode Tutor)</label>
     <select id="suaraEn"></select>
+    <label for="dengarSel">Pengenalan suara</label>
+    <select id="dengarSel"><option value="bawaan">Bawaan browser (langsung, kurang akurat)</option><option value="gemini">Gemini (lebih akurat, jeda 1–3 detik)</option></select>
+    <p class="small">Gemini memakai Edge Function "dengar" dan key Gemini yang sudah ada di proyek. Rekaman suara dikirim ke Google untuk ditranskrip. Kalau gagal, otomatis kembali ke bawaan.</p>
     <label for="fishOn">Suara Fish Audio</label>
     <select id="fishOn"><option value="off">Mati (pakai suara bawaan)</option><option value="on">Nyala</option></select>
     <label for="fishId">ID suara Fish untuk bahasa Indonesia</label>
@@ -313,6 +316,9 @@ body.hud .berita a{color:#e9fbff}
 // memeriksa kode rahasia. JANGAN isi service_role / secret key!
 const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+// Proyek LMS (baca-saja lewat fungsi asisten_lms_*). Kosongkan bila belum dipasang.
+const LMS_URL = 'https://ngmisemjfnamklajtjeg.supabase.co';
+const LMS_ANON_KEY = 'sb_publishable_8fui-5-oUHxX5_yuDVF_Tg_IQJbK2pR';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -480,7 +486,7 @@ function tambah(teks, kelas){
 }
 
 // ===== Pengaturan =====
-for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn','modelFoto']) { const v = ambilLS(k); if (v) $(k).value = v; }
+for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn','modelFoto','dengarSel']) { const v = ambilLS(k); if (v) $(k).value = v; }
 $('lajuV').textContent = (+$('laju').value).toFixed(1);
 if (!$('key').value) $('set').open = true;
 
@@ -508,7 +514,7 @@ if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged =
 $('laju').oninput = () => $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('simpan').onclick = () => {
   try { $('key').value = kunciOR(); } catch(e) { /* biarkan; pesan muncul saat dipakai */ }
-  for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn','modelFoto']) simpanLS(k, $(k).value.trim());
+  for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn','modelFoto','dengarSel']) simpanLS(k, $(k).value.trim());
   simpanLS('suara', $('suara').value); simpanLS('suaraEn', $('suaraEn').value);
   tampilJudul();
   status('Pengaturan disimpan'); $('set').open = false;
@@ -1318,6 +1324,14 @@ async function susunSapaan(){
       ada = true;
     } catch(e) { console.warn('sapaan:', e.message); }
   }
+  if (awanLMS()) {
+    try {
+      const j = await rpcLMS('asisten_lms_jadwal', {p_tanggal: tglLokal(0)});
+      const sisa = (j.kelas || []).filter(x => !x.izin && new Date(`${tglLokal(0)}T${x.mulai}:00`) > new Date());
+      if (j.libur) L.push(`Hari ini libur: ${j.libur}.`);
+      else if (j.kelas?.length) L.push(`Hari ini ada ${j.kelas.length} kelas${sisa.length ? `, berikutnya ${sisa[0].kelas} jam ${sisa[0].mulai.replace(':', '.')}` : ''}.`);
+    } catch(e) { console.warn('sapaan LMS:', e.message); }
+  }
   const hari = new Date().getDay(), jam = new Date().getHours();
   if (hari >= 1 && hari <= 5 && jam >= 4 && jam < 13) L.push('Semangat mengajar hari ini!');
   else L.push(ada ? 'Ada yang bisa saya bantu?' : 'Ada yang bisa saya bantu hari ini?');
@@ -1828,6 +1842,99 @@ async function kirimFoto(file){
 $('foto').onclick = () => { bukaKunciSuara(); $('fotoIn').value = ''; $('fotoIn').click(); };
 $('fotoIn').onchange = () => kirimFoto($('fotoIn').files[0]);
 
+// ===== LMS (proyek terpisah, baca-saja) =====
+const awanLMS = () => !!(LMS_URL && LMS_ANON_KEY && $('kode').value.trim());
+async function rpcLMS(fn, args = {}){
+  const h = LMS_ANON_KEY.startsWith('eyJ') ? {'apikey':LMS_ANON_KEY, 'Authorization':'Bearer ' + LMS_ANON_KEY} : {'apikey':LMS_ANON_KEY};
+  const res = await fetch(LMS_URL.replace(/\/$/, '') + '/rest/v1/rpc/' + fn, {
+    method:'POST', headers:{'Content-Type':'application/json', ...h}, body: JSON.stringify({p_kode: $('kode').value.trim(), ...args})
+  });
+  const t = await res.text(); let d = null; try { d = t ? JSON.parse(t) : null; } catch(e) { d = t; }
+  if (!res.ok) { const m = d?.message || res.status; throw new Error('LMS: ' + (/kode salah/i.test(m) ? 'kode rahasia di proyek LMS berbeda. Samakan kodenya di SQL LMS.' : m)); }
+  return d;
+}
+const ROMAWI = {'10':'X', '11':'XI', '12':'XII', x:'X', xi:'XI', xii:'XII'};
+function cariKelas(teks){
+  const awal = teks.toLowerCase().replace(/\bdua\s+belas\b/g, '12 ').replace(/\bsebelas\b/g, '11 ').replace(/\bsepuluh\b/g, '10 ');   // "sepuluh tiga" = X-3
+  const m = kataKeAngka(awal).match(/\b(xii|xi|x|12|11|10)\s*[-.]?\s*(\d{1,2})\b/);
+  return m ? `${ROMAWI[m[1]]}-${+m[2]}` : null;
+}
+const KATA_JADWAL = /(jadwal|ngajar|mengajar|ada kelas|kelas (saya|apa|hari ini|besok))/i;
+const KATA_KELAS_INFO = /(materi|tugas|kuis|terakhir|masuk|progres|perkembangan|gimana|bagaimana|kabar|status|ringkasan|sudah sampai)/i;
+const jamTitik = j => (j || '').replace(':', '.');
+function tglDari(teks){
+  const t = teks.toLowerCase(), d = new Date();
+  if (/\blusa\b/.test(t)) d.setDate(d.getDate() + 2);
+  else if (/\bbesok\b/.test(t)) d.setDate(d.getDate() + 1);
+  else if (/\bkemarin\b/.test(t)) d.setDate(d.getDate() - 1);
+  else { const h = t.match(/\b(minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b/); if (h) { const g = (HARI_ID.indexOf(h[1].replace("'", '')) - d.getDay() + 7) % 7; d.setDate(d.getDate() + g); } }
+  return d;
+}
+function kartuTeks(judul, baris){
+  const box = document.createElement('div'); box.className = 'msg a draf';
+  const h = document.createElement('b'); h.textContent = judul; box.appendChild(h);
+  for (const b of baris) { const d = document.createElement('div'); if (b.startsWith('·')) d.className = 'small'; d.textContent = b; box.appendChild(d); }
+  $('log').appendChild(box); $('log').scrollTop = $('log').scrollHeight;
+}
+async function jawabJadwal(teks){
+  const tgl = tglDari(teks), iso = tglLokalDari(tgl);
+  const d = await rpcLMS('asisten_lms_jadwal', {p_tanggal: iso});
+  const label = iso === tglLokal(0) ? 'Hari ini' : iso === tglLokal(-1) ? 'Besok' : tgl.toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long'});
+  if (d.libur) { kartuTeks('📅 ' + label, ['Libur: ' + d.libur]); return `${label} libur: ${d.libur}.`; }
+  const k = d.kelas || [];
+  if (!k.length) { kartuTeks('📅 ' + label, ['Tidak ada jadwal mengajar.']); return `${label} tidak ada jadwal mengajar.`; }
+  const kini = new Date(), hariIni = iso === tglLokal(0);
+  const baris = k.map(x => {
+    let st = x.izin ? 'izin' : x.jurnal ? 'jurnal ✓' : '';
+    if (!st && hariIni && x.selesai && new Date(`${iso}T${x.selesai}:00`) < kini) st = 'jurnal belum diisi';
+    return `${x.kelas} · ${jamTitik(x.mulai)}–${jamTitik(x.selesai)}${st ? ' · ' + st : ''}`;
+  });
+  kartuTeks(`📅 Jadwal ${label.toLowerCase() === 'hari ini' ? 'hari ini' : label}`, baris);
+  const daftar = k.map(x => `${x.kelas} jam ${jamTitik(x.mulai)}`);
+  const belum = hariIni ? k.filter(x => !x.izin && !x.jurnal && x.selesai && new Date(`${iso}T${x.selesai}:00`) < kini).map(x => x.kelas) : [];
+  const gabung = daftar.length > 2 ? daftar.slice(0, -1).join(', ') + ', dan ' + daftar.slice(-1) : daftar.join(' dan ');
+  return `${label} ada ${k.length} kelas: ${gabung}.` + (belum.length ? ` Jurnal ${belum.join(' dan ')} belum diisi.` : '');
+}
+async function jawabKelas(kelas){
+  const d = await rpcLMS('asisten_lms_kelas', {p_kelas: kelas});
+  if (!d?.ditemukan) return `Kelas ${kelas} tidak ditemukan di LMS.`;
+  const n = d.jumlah_siswa || 0, pct = x => n ? ` (${Math.round(x / n * 100)}%)` : '';
+  const tglPendek = iso => iso ? new Date(iso).toLocaleDateString('id-ID', {day:'numeric', month:'short'}) : '';
+  const baris = [];
+  if (d.pertemuan_terakhir) baris.push(`Pertemuan terakhir ${tglPendek(d.pertemuan_terakhir.tanggal)}${d.pertemuan_terakhir.materi ? ': ' + d.pertemuan_terakhir.materi : ''}`);
+  if (d.pertemuan_terakhir?.jurnal) baris.push('· Jurnal: ' + d.pertemuan_terakhir.jurnal);
+  if (d.materi.length) { baris.push('📘 Materi terbaru'); d.materi.forEach(m => baris.push(`· ${m.judul} (${tglPendek(m.terbit)}) — dibaca ${m.dibaca}/${n}`)); }
+  if (d.tugas.length) { baris.push('💻 Tugas terbaru'); d.tugas.forEach(t => baris.push(`· ${t.judul} — ${t.mengumpulkan}/${n} mengumpulkan${pct(t.mengumpulkan)}`)); }
+  const kuis = [...d.kuis.map(k => ({...k, tipe: k.jenis || 'kuis'})), ...d.paket_kuis];
+  if (kuis.length) { baris.push('📝 Kuis'); kuis.forEach(k => baris.push(`· ${k.judul} — ${k.mengerjakan}/${n} mengerjakan${k.tutup ? ', tutup ' + tglPendek(k.tutup) : ''}`)); }
+  if (!baris.length) baris.push('Belum ada materi, tugas, atau kuis yang diterbitkan.');
+  kartuTeks(`🏫 ${d.kelas} · ${n} siswa`, baris);
+  const bag = [];
+  if (d.materi[0]) bag.push(`materi terakhir ${d.materi[0].judul}`);
+  if (d.tugas[0]) bag.push(`tugas ${d.tugas[0].judul}, ${d.tugas[0].mengumpulkan} dari ${n} sudah mengumpulkan`);
+  if (kuis[0]) bag.push(`kuis ${kuis[0].judul}, ${kuis[0].mengerjakan} dari ${n} sudah mengerjakan`);
+  let jawab = bag.length ? `Di ${d.kelas}, ${bag.join('; ')}.` : `Di ${d.kelas} belum ada materi, tugas, atau kuis yang diterbitkan.`;
+  // saran langkah berikutnya: AI hanya menerima JUDUL dan persentase, tanpa data siswa
+  try {
+    if (bag.length && $('key').value.trim()) {
+      const ringkas = {materi: d.materi.map(m => m.judul), tugas: d.tugas.map(t => ({judul: t.judul, topik: t.topik, persen_mengumpulkan: n ? Math.round(t.mengumpulkan / n * 100) : null})),
+        kuis: kuis.map(k => ({judul: k.judul, persen_mengerjakan: n ? Math.round(k.mengerjakan / n * 100) : null})), pertemuan_terakhir: d.pertemuan_terakhir?.materi || null};
+      const saran = (await panggilOR([{role:'system', content:'Kamu asisten guru Informatika SMA kelas X. Berdasarkan judul materi, tugas, dan kuis terakhir di satu kelas (beserta persentase pengumpulan), sarankan SATU langkah berikutnya untuk pertemuan selanjutnya dalam 1-2 kalimat bahasa Indonesia yang ringkas, tanpa markdown dan emoji. Jangan mengarang data.'},
+        {role:'user', content: JSON.stringify(ringkas)}], 400)).replace(/\[[^\]]*\]/g, '').trim();
+      if (saran) { jawab += ' Saran: ' + saran; kartuTeks('💡 Saran berikutnya', [saran]); }
+    }
+  } catch(e) { console.warn('saran LMS:', e.message); }
+  return jawab;
+}
+const tglLokalDari = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+function cekLMS(pesan){
+  if (!MODE[mode].pribadi) return null;
+  const kelas = cariKelas(pesan);
+  if (kelas && (KATA_KELAS_INFO.test(pesan) || /^(saya\s+)?masuk\s+(ke\s+)?kelas/i.test(pesan))) return {jenis: 'kelas', kelas};
+  if (!kelas && KATA_JADWAL.test(pesan) && !/pengingat|ingatkan|timer/i.test(pesan)) return {jenis: 'jadwal'};
+  return null;
+}
+
 // ===== Mode tangan bebas =====
 let tanganBebas = false, kosongBeruntun = 0;
 function setBebas(on, pesan){
@@ -1840,8 +1947,8 @@ function setelahBicara(){
 }
 $('bebas').onclick = () => {
   bukaKunciSuara();
-  if (tanganBebas) { setBebas(false, 'Mode tangan bebas mati'); if (rek) rek.stop(); return; }
-  if (!SR) { status('Mikrofon tidak didukung di browser ini'); return; }
+  if (tanganBebas) { setBebas(false, 'Mode tangan bebas mati'); if (rek) rek.stop(); if (rekG) rekG.stop(); return; }
+  if (!SR && !pakaiGemini()) { status('Mikrofon tidak didukung di browser ini'); return; }
   setBebas(true, 'Mode tangan bebas aktif. Ucapkan "berhenti" untuk mematikan.');
   if (!bicara && !sibuk) dengar();
 };
@@ -1858,6 +1965,16 @@ async function kirim(pesan, dariSuara = false){
     let j;
     try { j = await perintahPengingat(pesan); } catch(e) { j = 'Pengingat gagal: ' + e.message; }
     sibuk = false; tambah(j, /gagal/i.test(j) ? 'e' : 'a'); ucapkan(j, /gagal|lewat|tidak valid/i.test(j) ? 'bingung' : 'senang');
+    return;
+  }
+  const cl = cekLMS(pesan);
+  if (cl) {
+    tambah(pesan, 'u');
+    if (!awanLMS()) { const j = LMS_URL ? 'Isi kode rahasia di Pengaturan untuk membaca LMS.' : 'Asisten belum tersambung ke LMS. Pasang SQL LMS dan isi LMS_URL di halaman.'; tambah(j, 'a'); ucapkan(j, 'bingung'); return; }
+    sibuk = true; setEkspresi('berpikir'); status('Membaca LMS…');
+    let j;
+    try { j = cl.jenis === 'kelas' ? await jawabKelas(cl.kelas) : await jawabJadwal(pesan); } catch(e) { j = e.message; }
+    sibuk = false; tambah(j, /^LMS:/.test(j) ? 'e' : 'a'); ucapkan(j, /^LMS:|tidak ditemukan/.test(j) ? 'bingung' : 'senang');
     return;
   }
   const jt = perintahTimer(pesan);
@@ -1913,11 +2030,31 @@ async function kirim(pesan, dariSuara = false){
 }
 $('f').onsubmit = e => { e.preventDefault(); bukaKunciSuara(); kirim($('teks').value); };
 
-// ===== Suara masuk (pengenalan suara) =====
+// ===== Suara masuk (pengenalan suara): bawaan browser atau Gemini =====
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rek = null, mendengar = false;
-function dengar(){
-  if (!SR || rek) return;
+const BISA_REKAM = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+let rek = null, mendengar = false, rekG = null, micLevel = 0, gagalGemini = 0;
+const pakaiGemini = () => $('dengarSel').value === 'gemini' && awan() && BISA_REKAM && gagalGemini < 2;
+function dengar(){ if (pakaiGemini()) dengarGemini(); else dengarBawaan(); }
+// penanganan bersama setelah selesai mendengar
+function akhirDengar(t, galat){
+  mendengar = false; micLevel = 0; $('mic').classList.remove('rec');
+  t = (t || '').trim();
+  if (t) { kosongBeruntun = 0; kirim(t, true); return; }
+  setEkspresi('netral');
+  if (galat === 'not-allowed' || galat === 'service-not-allowed') {
+    setBebas(false, 'Mikrofon tidak diizinkan. Izinkan mikrofon untuk situs ini di pengaturan browser, lalu coba lagi.');
+    return;
+  }
+  if (tanganBebas && galat !== 'gagal') {
+    kosongBeruntun++;
+    if (kosongBeruntun < 3) setTimeout(() => { if (tanganBebas) dengar(); }, 300);
+    else setBebas(false, 'Tidak ada suara, mode tangan bebas berhenti. Ketuk 🔁 untuk lanjut.');
+  } else if (galat !== 'gagal') status('Siap');
+}
+function dengarBawaan(){
+  if (!SR) { status('Pengenalan suara bawaan tidak didukung di browser ini.'); return; }
+  if (rek) return;
   hentikanSuara();
   rek = new SR(); rek.lang = MODE[mode].lang === 'en' ? 'en-US' : 'id-ID'; rek.interimResults = true;
   let akhir = '', galat = '';
@@ -1928,25 +2065,99 @@ function dengar(){
     $('teks').value = akhir || sementara;
   };
   rek.onerror = ev => { galat = ev.error; if (ev.error !== 'no-speech' && ev.error !== 'aborted') status('Mikrofon: ' + ev.error); };
-  rek.onend = () => {
-    mendengar = false; $('mic').classList.remove('rec'); rek = null;
-    const t = (akhir || $('teks').value).trim();
-    if (t) { kosongBeruntun = 0; kirim(t, true); return; }
-    setEkspresi('netral');
-    if (galat === 'not-allowed' || galat === 'service-not-allowed') {
-      setBebas(false, 'Mikrofon tidak diizinkan. Di iOS, mendengarkan otomatis mungkin perlu ketukan, jadi tangan bebas dimatikan.');
-      return;
-    }
-    if (tanganBebas) {
-      kosongBeruntun++;
-      if (kosongBeruntun < 3) setTimeout(() => { if (tanganBebas) dengar(); }, 300);
-      else setBebas(false, 'Tidak ada suara, mode tangan bebas berhenti. Ketuk 🔁 untuk lanjut.');
-    } else status('Siap');
-  };
+  rek.onend = () => { rek = null; akhirDengar(akhir || $('teks').value, galat); };
   try { rek.start(); } catch(e) { rek = null; status('Mikrofon gagal: ' + e.message); setBebas(false); }
 }
-if (!SR) { $('mic').style.display = 'none'; $('bebas').style.display = 'none'; status('Mikrofon tidak didukung di browser ini; silakan mengetik'); }
-$('mic').onclick = () => { bukaKunciSuara(); if (rek) { rek.stop(); return; } dengar(); };
+// rekam → WAV 16 kHz mono → Edge Function "dengar" (Gemini)
+function keWav(potongan, rateAsal){
+  const total = potongan.reduce((n, p) => n + p.length, 0), semua = new Float32Array(total);
+  let o = 0; for (const p of potongan) { semua.set(p, o); o += p.length; }
+  const rasio = rateAsal / 16000, n = Math.floor(total / rasio), pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i * rasio), b = Math.min(total, Math.floor((i + 1) * rasio));
+    let jml = 0; for (let k = a; k < b; k++) jml += semua[k];
+    const v = Math.max(-1, Math.min(1, jml / Math.max(1, b - a)));
+    pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + pcm.length * 2), dv = new DataView(buf);
+  const tulis = (off, str) => [...str].forEach((c, i) => dv.setUint8(off + i, c.charCodeAt(0)));
+  tulis(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); tulis(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 16000, true); dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); tulis(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buf, 44).set(pcm);
+  const u8 = new Uint8Array(buf); let bin = '';
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function dengarGemini(){
+  if (rekG) return;
+  hentikanSuara();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}}); }
+  catch(e) {
+    if (SR) { status('Mikrofon untuk Gemini tidak bisa dibuka, memakai pengenalan bawaan.'); dengarBawaan(); }
+    else akhirDengar('', 'not-allowed');
+    return;
+  }
+  bukaKunciSuara();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = actx || new AC();
+  if (ctx.state !== 'running') { try { await ctx.resume(); } catch(e) {} }
+  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), nol = ctx.createGain();
+  nol.gain.value = 0; src.connect(proc); proc.connect(nol); nol.connect(ctx.destination);
+  const potongan = [], mulai = Date.now();
+  let sudahBicara = false, terakhirSuara = 0, derau = 0, nDerau = 0, selesai = false;
+  mendengar = true; $('mic').classList.add('rec'); setEkspresi('dengar');
+  status(tanganBebas ? 'Mendengarkan… (Gemini, tangan bebas)' : 'Mendengarkan… (Gemini)');
+  const tutup = () => { try { proc.disconnect(); src.disconnect(); nol.disconnect(); } catch(e) {} stream.getTracks().forEach(t => t.stop()); proc.onaudioprocess = null; };
+  const akhiri = async (kirimRekaman) => {
+    if (selesai) return; selesai = true; rekG = null; tutup();
+    mendengar = false; micLevel = 0; $('mic').classList.remove('rec');
+    if (!kirimRekaman || !sudahBicara) { akhirDengar('', 'no-speech'); return; }
+    status('Memproses suara…'); setEkspresi('berpikir');
+    try {
+      const audio = keWav(potongan, ctx.sampleRate);
+      const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 25000);
+      const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/dengar', {
+        method:'POST', signal: ctrl.signal,
+        headers:{'Content-Type':'application/json', ...hdrSupabase(), 'x-asisten-kode': $('kode').value.trim()},
+        body: JSON.stringify({audio, mime: 'audio/wav', bahasa: MODE[mode].lang === 'en' ? 'en' : 'id'})
+      }).finally(() => clearTimeout(tm));
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || d.message || ('status ' + res.status));
+      gagalGemini = 0;
+      $('teks').value = d.teks || '';
+      akhirDengar(d.teks || '', d.teks ? '' : 'no-speech');
+    } catch(e) {
+      gagalGemini++;
+      const pesan = e.name === 'AbortError' ? 'terlalu lama' : e.message;
+      tambah('🎙️ Transkrip Gemini gagal: ' + pesan + (gagalGemini >= 2 ? '. Untuk sementara memakai pengenalan bawaan.' : '. Silakan ulangi.'), 'n');
+      setEkspresi('bingung'); status('Ulangi ucapan Anda');
+      akhirDengar('', 'gagal');
+    }
+  };
+  rekG = {stop: () => akhiri(true)};
+  proc.onaudioprocess = e => {
+    if (selesai) return;
+    const d = e.inputBuffer.getChannelData(0);
+    potongan.push(new Float32Array(d));
+    let jml = 0; for (let i = 0; i < d.length; i++) jml += d[i] * d[i];
+    const rms = Math.sqrt(jml / d.length), kini = Date.now();
+    micLevel = rms;
+    if (kini - mulai < 350) { derau += rms; nDerau++; return; }   // ukur derau ruangan sebentar
+    const ambang = Math.max(0.012, (derau / Math.max(1, nDerau)) * 3);
+    if (rms > ambang) { sudahBicara = true; terakhirSuara = kini; }
+    if (!sudahBicara && kini - mulai > 7000) akhiri(false);           // tidak ada suara
+    else if (sudahBicara && kini - terakhirSuara > 1300) akhiri(true); // diam setelah bicara
+    else if (kini - mulai > 25000) akhiri(true);                      // batas panjang rekaman
+  };
+}
+if (!SR && !BISA_REKAM) { $('mic').style.display = 'none'; $('bebas').style.display = 'none'; status('Mikrofon tidak didukung di browser ini; silakan mengetik'); }
+$('mic').onclick = () => {
+  bukaKunciSuara();
+  if (rekG) { rekG.stop(); return; }
+  if (rek) { rek.stop(); return; }
+  dengar();
+};
 
 // ===== Tema HUD =====
 const KATA_TEMA = /^(?:ganti\s+(?:ke\s+)?)?(?:tampilan|tema|layar)\s+(hud|jarvis|futuristik|biasa|normal|standar|awal)[.!\s]*$/i;
@@ -2073,7 +2284,7 @@ async function perbaruiBeritaHud(){
 function gambarHud(){
   document.body.classList.toggle('berpikir', sibuk);
   document.body.classList.toggle('tidur', keadaan === 'tidur');
-  const n = bicara ? buka : mendengar ? .15 + Math.random() * .2 : .02 + Math.random() * .02;
+  const n = bicara ? buka : mendengar ? (rekG ? Math.min(1, micLevel * 8) : .15 + Math.random() * .2) : .02 + Math.random() * .02;
   gel.push(n); gel.shift();
   const den = $('denyut');
   den.setAttribute('stroke-width', (4 + buka * 14).toFixed(1));
