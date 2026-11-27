@@ -41,6 +41,26 @@ h1{font-size:22px;margin:4px 0 0;text-align:center}
 /* disamarkan tanpa type=password, agar iOS tidak mengisi kata sandi otomatis */
 .rahasia{-webkit-text-security:disc;text-security:disc}
 .rahasia:focus{-webkit-text-security:none;text-security:none}
+/* ===== Timer ===== */
+#timers{display:grid;gap:8px;margin:8px auto 2px;max-width:520px}
+#timers:empty{display:none}
+.tmr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.tmr .lbl{font-size:14px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tmr .wkt{font-size:clamp(30px,8vw,40px);font-weight:700;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tmr .tbl{display:flex;gap:6px;grid-row:1 / span 2;grid-column:2}
+.tmr .tbl button{min-width:44px;padding:0 10px}
+.tmr .prg{grid-column:1 / -1;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.tmr .prg i{display:block;height:100%;background:var(--accent);transition:width .25s linear}
+.tmr.jeda .wkt{opacity:.55}
+.tmr.bunyi{border-color:#e4573d;animation:kedip 1s steps(2) infinite}
+.tmr.bunyi .wkt{color:#e4573d}
+@keyframes kedip{50%{background:rgba(228,87,61,.18)}}
+body.hud .tmr{background:var(--hpanel);border-color:var(--hline);border-radius:2px;clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px)}
+body.hud .tmr .wkt{font-family:"Share Tech Mono",monospace;font-weight:400;color:#e9fbff;text-shadow:0 0 10px rgba(79,227,255,.7)}
+body.hud .tmr .prg{background:rgba(79,227,255,.12);border-radius:0}
+body.hud .tmr .prg i{background:linear-gradient(90deg,var(--h2),var(--h));box-shadow:0 0 8px var(--h)}
+body.hud .tmr.bunyi .wkt{color:#ff8a70;text-shadow:0 0 12px #ff5a46}
+@media (prefers-reduced-motion:reduce){.tmr.bunyi{animation:none}}
 .draf{border:2px solid var(--accent);max-width:92%}
 .berita{max-width:96%}
 .berita ol{margin:6px 0 0;padding-left:20px}
@@ -152,6 +172,7 @@ body.hud .berita a{color:#e9fbff}
   <section id="tengah">
   <h1 id="judul">Jarvis</h1>
   <div id="status">Ketuk 🎤 atau ketik pesan untuk mulai</div>
+  <div id="timers" aria-live="polite"></div>
 
   <div id="inti">
   <svg id="cincin" viewBox="0 0 400 400" aria-hidden="true">
@@ -263,6 +284,7 @@ body.hud .berita a{color:#e9fbff}
     <label for="temaSel">Tampilan</label>
     <select id="temaSel"><option value="biasa">Biasa</option><option value="hud">HUD futuristik</option></select>
     <p class="small">Atau ucapkan/ketik "tampilan HUD" dan "tampilan biasa".</p>
+    <p class="small"><b>Timer:</b> "timer 10 menit masak mie", "pasang timer setengah jam", "sisa timer", "tambah 5 menit", "jeda timer", "lanjutkan timer", "batalkan timer", "batalkan semua timer". Timer hanya berbunyi selama aplikasi terbuka; layar dijaga tetap menyala selama timer berjalan.</p>
   </details>
   </section>
 
@@ -273,8 +295,8 @@ body.hud .berita a{color:#e9fbff}
 // Supabase URL & anon/publishable key (Project Settings → API).
 // Aman ditaruh di sini karena tabel hanya bisa diakses lewat fungsi yang
 // memeriksa kode rahasia. JANGAN isi service_role / secret key!
-const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -1219,6 +1241,214 @@ const KATA_YA = /^(ya|iya|iyah|yap|yup|simpan|simpan saja|oke|ok|okay|betul|bena
 const KATA_BATAL = /^(batal|batalkan|tidak|nggak|enggak|ga|gak|jangan|tidak usah|nggak usah|cancel)[.!\s]*$/i;
 const KATA_KOREKSI = /(\d|porsi|centong|piring|gelas|mangkok|potong|sendok|bungkus|tanpa|pakai|bukan|cuma|hanya|setengah|tambah|kurang|besar|kecil|menit|jam|km|kemarin|nasi|lauk|minum|makan|lari|jalan)/i;
 
+// ===== Timer serbaguna =====
+let timers = ambilJSON('timers', []);   // {id, label, total, akhir, sisa (ms bila dijeda), bunyi, selesaiPada}
+let detakTimer = null, kunciLayar = null, bunyiTimer = null;
+const ANGKA = {nol:0,satu:1,se:1,dua:2,tiga:3,empat:4,lima:5,enam:6,tujuh:7,delapan:8,sembilan:9,
+  one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,fifteen:15,twenty:20,thirty:30,forty:40,fifty:50,sixty:60};
+const SATUAN = '(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan)';
+function kataKeAngka(t){
+  return t.toLowerCase()
+    .replace(/\bsatu\s+setengah\s+jam\b/g, '90 menit').replace(/\bsetengah\s+jam\b/g, '30 menit').replace(/\bseperempat\s+jam\b/g, '15 menit')
+    .replace(/\b(an?|one)\s+hour\s+and\s+a\s+half\b/g, '90 minutes').replace(/\bhalf\s+an?\s+hour\b/g, '30 minutes')
+    .replace(new RegExp(`\\b(se|${SATUAN.slice(1,-1)})\\s*puluh(?:\\s+${SATUAN})?\\b`, 'g'), (_, a, b) => String((ANGKA[a] ?? 1) * 10 + (b ? ANGKA[b] : 0)))
+    .replace(new RegExp(`\\b(se|${SATUAN.slice(1,-1)})\\s*belas\\b`, 'g'), (_, a) => String(10 + (ANGKA[a] ?? 1)))
+    .replace(/\bsepuluh\b/g, '10').replace(/\bsebelas\b/g, '11')
+    .replace(/\b(nol|satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty)\b/g, w => String(ANGKA[w]))
+    .replace(/\b(a|an)\s+(minute|hour)\b/g, '1 $2').replace(/(\d),(\d)/g, '$1.$2');
+}
+const POLA_DURASI = /(\d+(?:\.\d+)?)\s*(jam|j|hours?|hrs?|menit|mnt|minutes?|mins?|detik|dtk|seconds?|secs?)\b/g;
+function uraiDurasi(t){
+  let det = 0;
+  for (const m of kataKeAngka(t).matchAll(POLA_DURASI)) {
+    const n = parseFloat(m[1]), u = m[2];
+    det += /^(jam|j|hour|hours|hr|hrs)$/.test(u) ? n * 3600 : /^(menit|mnt|minute|minutes|min|mins)$/.test(u) ? n * 60 : n;
+  }
+  return Math.round(det);
+}
+function labelTimer(t){
+  const l = kataKeAngka(t).replace(POLA_DURASI, ' ')
+    .replace(/\b(tolong|dong|ya|yah|deh|pasang|pasangkan|setel|set|buat|buatkan|bikin|bikinin|nyalakan|aktifkan|mulai|start|timer|hitung mundur|countdown|ingatkan|saya|aku|lagi|selama|untuk|buat|a|for|please|me|the)\b/g, ' ')
+    .replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim();
+  return (l.charAt(0).toUpperCase() + l.slice(1)).slice(0, 40) || 'Timer';
+}
+const fmtSisa = ms => { const s = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), d = s % 60;
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(d).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(d).padStart(2,'0')}`; };
+function ucapDurasi(det, en){
+  const h = Math.floor(det / 3600), m = Math.floor(det % 3600 / 60), d = det % 60, b = [];
+  if (en) { if (h) b.push(h + (h > 1 ? ' hours' : ' hour')); if (m) b.push(m + (m > 1 ? ' minutes' : ' minute')); if (d) b.push(d + (d > 1 ? ' seconds' : ' second')); return b.join(' ') || '0 seconds'; }
+  if (h) b.push(h + ' jam'); if (m) b.push(m + ' menit'); if (d) b.push(d + ' detik'); return b.join(' ') || '0 detik';
+}
+const sisaMs = t => t.sisa != null ? t.sisa : t.akhir - Date.now();
+function simpanTimer(){ simpanLS('timers', JSON.stringify(timers)); }
+function gambarTimer(){
+  const box = $('timers'); box.replaceChildren();
+  for (const t of timers) {
+    const el = document.createElement('div');
+    el.className = 'tmr' + (t.sisa != null ? ' jeda' : '') + (t.bunyi ? ' bunyi' : '');
+    const lbl = document.createElement('div'); lbl.className = 'lbl';
+    lbl.textContent = '⏱ ' + t.label + (t.selesaiPada && !t.bunyi ? ' · selesai ' + new Date(t.selesaiPada).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}) : t.sisa != null ? ' · dijeda' : '');
+    const w = document.createElement('div'); w.className = 'wkt'; w.dataset.id = t.id;
+    w.textContent = t.selesaiPada ? 'Selesai!' : fmtSisa(sisaMs(t));
+    const tbl = document.createElement('div'); tbl.className = 'tbl';
+    const tombol = (isi, judul, fn, alt = true) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = isi; b.title = judul; b.setAttribute('aria-label', judul); if (alt) b.className = 'alt'; b.onclick = fn; return b; };
+    if (t.selesaiPada) tbl.append(tombol('Matikan', 'Matikan timer', () => hapusTimer(t.id), false));
+    else {
+      tbl.append(tombol(t.sisa != null ? '▶' : '❚❚', t.sisa != null ? 'Lanjutkan' : 'Jeda', () => jedaTimer(t.id)));
+      tbl.append(tombol('+1', 'Tambah 1 menit', () => tambahTimer(t.id, 60)));
+      tbl.append(tombol('✕', 'Batalkan timer', () => hapusTimer(t.id)));
+    }
+    const prg = document.createElement('div'); prg.className = 'prg';
+    const i = document.createElement('i'); i.dataset.id = t.id;
+    i.style.width = t.selesaiPada ? '100%' : (100 - Math.max(0, sisaMs(t)) / (t.total * 1000) * 100).toFixed(1) + '%';
+    prg.appendChild(i);
+    el.append(lbl, w, tbl, prg);
+    box.appendChild(el);
+  }
+  aturDetak();
+}
+function aturDetak(){
+  const jalan = timers.some(t => !t.selesaiPada && t.sisa == null);
+  if (jalan && !detakTimer) detakTimer = setInterval(detikTimer, 250);
+  if (!jalan && detakTimer) { clearInterval(detakTimer); detakTimer = null; }
+  jagaLayar(timers.some(t => !t.selesaiPada || t.bunyi));
+}
+function detikTimer(){
+  let berubah = false;
+  for (const t of timers) {
+    if (t.selesaiPada || t.sisa != null) continue;
+    const ms = sisaMs(t);
+    const w = document.querySelector(`.tmr .wkt[data-id="${t.id}"]`), i = document.querySelector(`.tmr .prg i[data-id="${t.id}"]`);
+    if (w) w.textContent = fmtSisa(ms);
+    if (i) i.style.width = (100 - Math.max(0, ms) / (t.total * 1000) * 100).toFixed(1) + '%';
+    if (ms <= 0) { t.selesaiPada = Date.now(); t.bunyi = true; berubah = true; timerSelesai(t); }
+  }
+  if (berubah) { simpanTimer(); gambarTimer(); }
+}
+async function jagaLayar(perlu){
+  try {
+    if (perlu && !kunciLayar && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+      kunciLayar = await navigator.wakeLock.request('screen');
+      kunciLayar.addEventListener('release', () => { kunciLayar = null; });
+    } else if (!perlu && kunciLayar) { await kunciLayar.release(); kunciLayar = null; }
+  } catch(e) { kunciLayar = null; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { detikTimer(); aturDetak(); } });
+function bip(){
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!actx && AC) { try { actx = new AC(); } catch(e) {} }
+  if (!actx) return;
+  if (actx.state !== 'running') actx.resume().catch(() => {});
+  const t0 = actx.currentTime;
+  for (let k = 0; k < 3; k++) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, t0 + k * 0.22); g.gain.exponentialRampToValueAtTime(0.35, t0 + k * 0.22 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + k * 0.22 + 0.16);
+    o.connect(g); g.connect(actx.destination); o.start(t0 + k * 0.22); o.stop(t0 + k * 0.22 + 0.18);
+  }
+  try { navigator.vibrate?.([250, 120, 250]); } catch(e) {}
+}
+function timerSelesai(t){
+  aktif(); setEkspresi('kaget');
+  const en = MODE[mode].lang === 'en';
+  let n = 0;
+  clearInterval(bunyiTimer);
+  bip();
+  bunyiTimer = setInterval(() => {
+    if (!timers.some(x => x.bunyi) || ++n > 30) { hentikanBunyi(); return; }
+    if (!bicara && !mendengar) bip();
+  }, 2000);
+  setTimeout(() => { if (timers.some(x => x.bunyi)) ucapkan(en ? `Time's up! ${t.label === 'Timer' ? 'Your timer' : t.label} is done.` : `Waktu habis! ${t.label === 'Timer' ? 'Timer' : t.label} selesai.`, 'senang'); }, 2300);
+}
+function hentikanBunyi(){
+  clearInterval(bunyiTimer); bunyiTimer = null;
+  let ada = false;
+  for (const t of timers) if (t.bunyi) { t.bunyi = false; ada = true; }
+  if (ada) { simpanTimer(); gambarTimer(); }
+}
+function buatTimer(det, label){
+  const t = {id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label, total: det, akhir: Date.now() + det * 1000, sisa: null, bunyi: false, selesaiPada: null};
+  timers.push(t); if (timers.length > 6) timers.shift();
+  simpanTimer(); gambarTimer();
+  return t;
+}
+function hapusTimer(id){
+  timers = timers.filter(t => t.id !== id);
+  if (!timers.some(t => t.bunyi)) { clearInterval(bunyiTimer); bunyiTimer = null; }
+  simpanTimer(); gambarTimer();
+}
+function jedaTimer(id, paksa){
+  const t = timers.find(x => x.id === id); if (!t || t.selesaiPada) return;
+  const mauJeda = paksa ?? (t.sisa == null);
+  if (mauJeda && t.sisa == null) t.sisa = Math.max(0, t.akhir - Date.now());
+  else if (!mauJeda && t.sisa != null) { t.akhir = Date.now() + t.sisa; t.sisa = null; }
+  simpanTimer(); gambarTimer();
+}
+function tambahTimer(id, det){
+  const t = timers.find(x => x.id === id); if (!t) return;
+  if (t.selesaiPada) { t.selesaiPada = null; t.bunyi = false; t.akhir = Date.now(); t.total = 0; }
+  if (t.sisa != null) t.sisa += det * 1000; else t.akhir += det * 1000;
+  t.total += det;
+  if (!timers.some(x => x.bunyi)) { clearInterval(bunyiTimer); bunyiTimer = null; }
+  simpanTimer(); gambarTimer();
+}
+// pulihkan timer setelah aplikasi dibuka ulang
+(() => {
+  const kini = Date.now();
+  for (const t of timers) if (!t.selesaiPada && t.sisa == null && t.akhir <= kini) { t.selesaiPada = t.akhir; t.bunyi = false; }
+  timers = timers.filter(t => !t.selesaiPada || kini - t.selesaiPada < 6 * 3600000);
+  simpanTimer(); gambarTimer();
+})();
+// pilih timer yang dimaksud: yang namanya disebut, atau yang paling baru
+function pilihTimer(teks){
+  const k = teks.toLowerCase();
+  return [...timers].reverse().find(t => t.label !== 'Timer' && k.includes(t.label.toLowerCase())) || timers[timers.length - 1];
+}
+// kembalikan jawaban (teks) bila pesan adalah perintah timer, atau null
+function perintahTimer(pesan){
+  const t = pesan.toLowerCase().trim(), en = MODE[mode].lang === 'en';
+  const j = (id, eng) => en ? eng : id;
+  if (timers.some(x => x.bunyi) && /^(stop|matikan|oke|ok|sudah|cukup|diam|matikan alarm|stop alarm|matikan timer|okay)[.!\s]*$/.test(t)) {
+    const sel = timers.filter(x => x.bunyi); sel.forEach(x => hapusTimer(x.id)); hentikanBunyi();
+    return j('Oke, timer dimatikan.', 'Okay, timer stopped.');
+  }
+  const sebutTimer = /(timer|hitung mundur|countdown)/.test(t);
+  if (/(batal|batalkan|hentikan|stop|matikan|hapus|cancel)\b.*\b(timer|hitung mundur)/.test(t)) {
+    if (!timers.length) return j('Tidak ada timer yang berjalan.', 'There is no timer running.');
+    if (/semua|all/.test(t)) { timers = []; hentikanBunyi(); simpanTimer(); gambarTimer(); return j('Semua timer dibatalkan.', 'All timers cancelled.'); }
+    const x = pilihTimer(t); hapusTimer(x.id); return j(`Timer ${x.label === 'Timer' ? '' : x.label.toLowerCase() + ' '}dibatalkan.`, 'Timer cancelled.');
+  }
+  if (/(jeda|pause|tahan)\b.*\btimer/.test(t)) {
+    const x = timers.length && pilihTimer(t); if (!x) return j('Tidak ada timer yang berjalan.', 'There is no timer running.');
+    jedaTimer(x.id, true); return j('Timer dijeda.', 'Timer paused.');
+  }
+  if (/(lanjut|lanjutkan|resume|teruskan)\b.*\btimer/.test(t)) {
+    const x = timers.length && pilihTimer(t); if (!x) return j('Tidak ada timer.', 'There is no timer.');
+    jedaTimer(x.id, false); return j(`Timer dilanjutkan, sisa ${ucapDurasi(Math.ceil(sisaMs(x) / 1000), false)}.`, `Timer resumed, ${ucapDurasi(Math.ceil(sisaMs(x) / 1000), true)} left.`);
+  }
+  if (timers.length && /(sisa|berapa lagi|tinggal berapa|time left|how long)/.test(t) && (sebutTimer || /waktu|time/.test(t) || timers.length)) {
+    if (!sebutTimer && !/waktu|time|berapa lagi|tinggal/.test(t)) return null;
+    const aktifT = timers.filter(x => !x.selesaiPada);
+    if (!aktifT.length) return j('Semua timer sudah selesai.', 'All timers are done.');
+    return aktifT.map(x => `${x.label === 'Timer' ? j('Timer', 'Timer') : x.label}: ${j('sisa', '')} ${ucapDurasi(Math.ceil(Math.max(0, sisaMs(x)) / 1000), en)}${x.sisa != null ? j(' (dijeda)', ' (paused)') : ''}`).join('. ') + '.';
+  }
+  const det = uraiDurasi(t);
+  if (/(tambah|tambahkan|add)\b/.test(t) && det && timers.length && (sebutTimer || !draf)) {
+    const x = pilihTimer(t); tambahTimer(x.id, det);
+    return j(`Ditambah ${ucapDurasi(det, false)}. Sisa ${ucapDurasi(Math.ceil(sisaMs(x) / 1000), false)}.`, `Added ${ucapDurasi(det, true)}.`);
+  }
+  const ingatkan = /^(tolong\s+)?ingatkan\b.*\blagi\b/.test(t);
+  if ((sebutTimer || ingatkan) && det) {
+    if (det > 24 * 3600) return j('Timer maksimal 24 jam.', 'The maximum timer is 24 hours.');
+    if (det < 5) return j('Timer minimal 5 detik.', 'The minimum timer is 5 seconds.');
+    const x = buatTimer(det, labelTimer(t));
+    return j(`Oke, timer ${ucapDurasi(det, false)}${x.label !== 'Timer' ? ' untuk ' + x.label.toLowerCase() : ''} dimulai.`, `Okay, ${ucapDurasi(det, true)} timer started.`);
+  }
+  if (sebutTimer && /(pasang|setel|set|buat|bikin|mulai|start|timer\s*$)/.test(t))
+    return j('Berapa lama timernya? Misalnya "timer 10 menit".', 'How long should the timer be? For example, "timer 5 minutes".');
+  return null;
+}
+
 // ===== Mode tangan bebas =====
 let tanganBebas = false, kosongBeruntun = 0;
 function setBebas(on, pesan){
@@ -1244,6 +1474,8 @@ async function kirim(pesan, dariSuara = false){
   pesan = pesan.trim();
   if (!pesan || sibuk) return;
   $('teks').value = '';
+  const jt = perintahTimer(pesan);
+  if (jt) { tambah(pesan, 'u'); tambah(jt, 'a'); ucapkan(jt, 'senang'); return; }
   const tm = pesan.match(KATA_TEMA);
   if (tm) {
     tambah(pesan, 'u');
