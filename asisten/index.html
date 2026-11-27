@@ -41,6 +41,14 @@ h1{font-size:22px;margin:4px 0 0;text-align:center}
 /* disamarkan tanpa type=password, agar iOS tidak mengisi kata sandi otomatis */
 .rahasia{-webkit-text-security:disc;text-security:disc}
 .rahasia:focus{-webkit-text-security:none;text-security:none}
+/* ===== Bar topik Tutor ===== */
+#tutorBar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px auto 2px;max-width:560px}
+body:not([data-mode=tutor]) #tutorBar{display:none}
+#tutorBar button{min-height:40px;font-size:15px;padding:0 12px}
+#tutorBar button.akhir{background:#e4573d;color:#fff;border-color:#e4573d}
+.ringkas{border:2px solid var(--accent);max-width:94%}
+.ringkas h4{margin:0 0 4px;font-size:16px}
+.ringkas ul{margin:4px 0 8px;padding-left:20px}
 /* ===== Timer ===== */
 #timers{display:grid;gap:8px;margin:8px auto 2px;max-width:520px}
 #timers:empty{display:none}
@@ -172,6 +180,7 @@ body.hud .berita a{color:#e9fbff}
   <section id="tengah">
   <h1 id="judul">Jarvis</h1>
   <div id="status">Ketuk 🎤 atau ketik pesan untuk mulai</div>
+  <div id="tutorBar" role="group" aria-label="Topik latihan"></div>
   <div id="timers" aria-live="polite"></div>
 
   <div id="inti">
@@ -284,6 +293,7 @@ body.hud .berita a{color:#e9fbff}
     <label for="temaSel">Tampilan</label>
     <select id="temaSel"><option value="biasa">Biasa</option><option value="hud">HUD futuristik</option></select>
     <p class="small">Atau ucapkan/ketik "tampilan HUD" dan "tampilan biasa".</p>
+    <p class="small"><b>Pengingat (lewat Telegram):</b> "ingatkan jam 3 sore minum air", "ingatkan besok pagi bawa flashdisk", "ingatkan hari Senin jam 9 rapat", "ingatkan 2 jam lagi angkat jemuran", "daftar pengingat", "hapus pengingat minum air".</p>
     <p class="small"><b>Timer:</b> "timer 10 menit masak mie", "pasang timer setengah jam", "sisa timer", "tambah 5 menit", "jeda timer", "lanjutkan timer", "batalkan timer", "batalkan semua timer". Timer hanya berbunyi selama aplikasi terbuka; layar dijaga tetap menyala selama timer berjalan.</p>
   </details>
   </section>
@@ -295,8 +305,8 @@ body.hud .berita a{color:#e9fbff}
 // Supabase URL & anon/publishable key (Project Settings → API).
 // Aman ditaruh di sini karena tabel hanya bisa diakses lewat fungsi yang
 // memeriksa kode rahasia. JANGAN isi service_role / secret key!
-const SUPABASE_URL = '';
-const SUPABASE_ANON_KEY = '';
+const SUPABASE_URL = 'https://mhdswzvwvscsshbqbbzq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_snrVdhfDKZj-3KoWIJmMdA_eGy9z-Iu';
 // =================================================
 {
 const $ = id => document.getElementById(id);
@@ -510,6 +520,12 @@ $('cekKey').onclick = async () => {
 };
 $('tes').onclick = () => { bukaKunciSuara(); ucapkan('Halo, saya ' + ($('nama').value || 'asisten Anda') + '. Senang bertemu dengan Anda.', 'senang'); };
 
+// Header Supabase: kunci publishable (sb_publishable_…) cukup di "apikey";
+// kunci anon lama (JWT, diawali eyJ) juga dikirim sebagai Authorization.
+const hdrSupabase = () => SUPABASE_ANON_KEY.startsWith('eyJ')
+  ? {'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY}
+  : {'apikey':SUPABASE_ANON_KEY};
+
 // ===== Ingatan: Supabase (lewat kode rahasia) atau lokal =====
 let riwayat = [];   // {role, content}
 let fakta = [];     // {id, fakta}
@@ -517,7 +533,7 @@ const awan = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY && $('kode').value.trim(
 async function rpc(fn, args = {}){
   const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/rpc/' + fn, {
     method:'POST',
-    headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY},
+    headers:{'Content-Type':'application/json', ...hdrSupabase()},
     body: JSON.stringify({p_kode: $('kode').value.trim(), ...args})
   });
   const t = await res.text();
@@ -700,7 +716,7 @@ async function ambilSuaraFish(teks){
   try {
     const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/suara', {
       method:'POST', signal: ctrl.signal,
-      headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY, 'x-asisten-kode':$('kode').value.trim()},
+      headers:{'Content-Type':'application/json', ...hdrSupabase(), 'x-asisten-kode':$('kode').value.trim()},
       body: JSON.stringify({teks, suara: id || null})
     });
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || d.message || ('status ' + res.status)); }
@@ -811,6 +827,78 @@ const MODE = {
       `Praise effort often. No markdown, no emoji. Keep topics school-appropriate. ` +
       `Never ask for personal data such as full name, address, phone number, or social media accounts.`}
 };
+// Topik latihan Tutor
+const TOPIK = {
+  perkenalan: {en:'Introducing yourself', kata:['perkenalan','kenalan','introduce','introducing','introduction','yourself','me'], tanya:"Let's practice introducing yourself. What is your nickname?"},
+  hobi:       {en:'Hobbies', kata:['hobi','hobby','hobbies','free time'], tanya:'Let\'s talk about hobbies. What do you like to do in your free time?'},
+  sekolah:    {en:'School', kata:['sekolah','school','class','kelas'], tanya:'Let\'s talk about school. What is your favorite subject?'},
+  keluarga:   {en:'Family', kata:['keluarga','family'], tanya:'Let\'s talk about family. How many people are in your family?'},
+  makanan:    {en:'Food', kata:['makanan','makan','food','eat','eating'], tanya:'Let\'s talk about food. What is your favorite food?'},
+  cita:       {en:'Dreams and jobs', kata:['cita-cita','cita','dream','dreams','job','jobs','future'], tanya:'Let\'s talk about the future. What job do you want in the future?'},
+  liburan:    {en:'Holidays', kata:['liburan','libur','holiday','holidays','vacation'], tanya:'Let\'s talk about holidays. Where do you like to go on holiday?'},
+  rutinitas:  {en:'Daily routine', kata:['rutinitas','kegiatan','routine','daily','activities','daily routine'], tanya:'Let\'s talk about your day. What time do you usually wake up?'}
+};
+let sesi = null;   // {topik, mulai, giliran, kosakata:[], koreksi:[]}
+function sesiBaru(topik = null){ sesi = {topik, mulai: Date.now(), giliran: 0, kosakata: [], koreksi: []}; }
+function gambarTutorBar(){
+  const bar = $('tutorBar'); bar.replaceChildren();
+  for (const [k, t] of Object.entries(TOPIK)) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'alt'; b.textContent = t.en;
+    b.setAttribute('aria-pressed', sesi?.topik === k ? 'true' : 'false');
+    b.onclick = () => { bukaKunciSuara(); mulaiTopik(k); };
+    bar.appendChild(b);
+  }
+  const e = document.createElement('button'); e.type = 'button'; e.className = 'akhir'; e.textContent = 'End session';
+  e.onclick = () => { bukaKunciSuara(); akhiriSesi(); };
+  bar.appendChild(e);
+}
+function cariTopik(t){
+  t = t.toLowerCase();
+  for (const [k, v] of Object.entries(TOPIK)) if (k === t || v.kata.some(w => t.includes(w))) return k;
+  return null;
+}
+function mulaiTopik(k){
+  if (mode !== 'tutor') return;
+  hentikanSuara();
+  sesiBaru(k); riwayatTutor = [];
+  gambarTutorBar();
+  tambah('🎓 Topic: ' + TOPIK[k].en, 'n');
+  const q = TOPIK[k].tanya;
+  riwayatTutor.push({role:'assistant', content:'[senang] ' + q});
+  tambah(q, 'a'); ucapkan(q, 'senang');
+}
+function akhiriSesi(){
+  if (mode !== 'tutor' || !sesi) return;
+  hentikanSuara();
+  const s = sesi, menit = Math.max(1, Math.round((Date.now() - s.mulai) / 60000));
+  const box = document.createElement('div'); box.className = 'msg a ringkas';
+  const h = document.createElement('h4'); h.textContent = '📋 Session summary' + (s.topik ? ' · ' + TOPIK[s.topik].en : '');
+  const info = document.createElement('div'); info.textContent = `${s.giliran} answer${s.giliran === 1 ? '' : 's'} from the student · about ${menit} minute${menit === 1 ? '' : 's'}`;
+  box.append(h, info);
+  const daftar = (judul, isi) => {
+    if (!isi.length) return;
+    const b = document.createElement('b'); b.textContent = judul;
+    const ul = document.createElement('ul');
+    isi.forEach(x => { const li = document.createElement('li'); li.textContent = x; ul.appendChild(li); });
+    box.append(b, ul);
+  };
+  daftar('New words', s.kosakata);
+  daftar('You can say it better', s.koreksi);
+  if (!s.kosakata.length && !s.koreksi.length) { const k = document.createElement('div'); k.className = 'small'; k.textContent = 'No new words or corrections were noted in this session.'; box.appendChild(k); }
+  const teksSalin = [h.textContent, info.textContent, s.kosakata.length ? 'New words: ' + s.kosakata.join('; ') : '', s.koreksi.length ? 'Corrections: ' + s.koreksi.join('; ') : ''].filter(Boolean).join('\n');
+  const aksi = document.createElement('div'); aksi.className = 'row';
+  const bc = document.createElement('button'); bc.type = 'button'; bc.className = 'alt'; bc.textContent = 'Salin ringkasan';
+  bc.onclick = () => navigator.clipboard?.writeText(teksSalin).then(() => { bc.textContent = 'Tersalin ✓'; }).catch(() => { bc.textContent = 'Gagal menyalin'; });
+  aksi.appendChild(bc); box.appendChild(aksi);
+  const k = document.createElement('div'); k.className = 'small'; k.textContent = 'Ringkasan ini tidak disimpan ke mana pun.'; box.appendChild(k);
+  $('log').appendChild(box); $('log').scrollTop = $('log').scrollHeight;
+  const ucap = s.giliran ? `Great job! You answered ${s.giliran} time${s.giliran === 1 ? '' : 's'} today.${s.kosakata.length ? ` You learned ${s.kosakata.length} new word${s.kosakata.length === 1 ? '' : 's'}.` : ''} See you next time!` : 'Okay, the session is finished. See you next time!';
+  ucapkan(ucap, 'senang');
+  sesiBaru(null); riwayatTutor = []; gambarTutorBar();
+}
+const KATA_TOPIK = /^(?:\/?topi[ck]|let'?s talk about|talk about|ganti topik|topik)\s*:?\s+(.{2,40})$/i;
+const KATA_AKHIR_SESI = /^(\/selesai|\/end|end (the )?session|finish (the )?session|stop (the )?session|akhiri sesi|selesai sesi|sesi selesai)[.!\s]*$/i;
+
 let mode = MODE[ambilLS('mode')] ? ambilLS('mode') : 'pribadi';
 let riwayatTutor = [];
 function tampilJudul(){ $('judul').textContent = ($('nama').value || 'Asisten') + (mode === 'pribadi' ? '' : ' · ' + MODE[mode].label); }
@@ -831,8 +919,8 @@ async function gantiMode(k){
   const dariPribadi = MODE[mode].pribadi;
   mode = k; simpanLS('mode', k); tampilMode();
   if (!MODE[k].pribadi) {
-    riwayatTutor = []; $('log').innerHTML = '';
-    tambah('🎓 Mode Tutor: obrolan ini tidak disimpan dan tidak memakai ingatan pribadi.', 'n');
+    riwayatTutor = []; $('log').innerHTML = ''; sesiBaru(null); gambarTutorBar();
+    tambah('🎓 Mode Tutor: obrolan ini tidak disimpan dan tidak memakai ingatan pribadi. Pilih topik di atas, atau langsung mengobrol.', 'n');
     const h = urai(MODE[k].sapa($('nama').value || 'Jarvis'));
     riwayatTutor.push({role:'assistant', content:`[${h.ekspresi}] ${h.jawaban}`});
     tambah(h.jawaban, 'a'); ucapkan(h.jawaban, h.ekspresi);
@@ -886,7 +974,7 @@ async function ambilBerita(arg){
   if (!awan()) throw new Error('kode rahasia Supabase belum diisi');
   const res = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/berita', {
     method:'POST',
-    headers:{'Content-Type':'application/json', 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer ' + SUPABASE_ANON_KEY, 'x-asisten-kode':$('kode').value.trim()},
+    headers:{'Content-Type':'application/json', ...hdrSupabase(), 'x-asisten-kode':$('kode').value.trim()},
     body: JSON.stringify(arg)
   });
   const d = await res.json().catch(() => ({}));
@@ -939,7 +1027,12 @@ function instruksi(sehat = '', berita = ''){
   const m = MODE[mode];
   const sekarang = new Date().toLocaleString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'});
   const format = `\n\nFORMAT WAJIB / REQUIRED FORMAT: start every reply with one expression label: ` + EKS_AI.map(k => `[${k}]`).join(' ') + `.`;
-  if (!m.pribadi) return m.gaya(nama) + format + `\nExample: [senang] Great job! You can say: "I like football." What sport do you like?`;
+  if (!m.pribadi) return m.gaya(nama) +
+    (sesi?.topik ? ` Today's topic is "${TOPIK[sesi.topik].en}". Keep the conversation on this topic.` : '') + format +
+    `\nAfter your reply, you may add at most ONE tag of each kind (they are hidden from the student):` +
+    `\n[kosakata: english word = arti bahasa Indonesia] when you introduce or the student uses a useful new word;` +
+    `\n[koreksi: student's wrong phrase → correct phrase] when you recast a mistake.` +
+    `\nExample: [senang] Great job! You can say: "I like football." What sport do you like? [koreksi: I like play football → I like playing football] [kosakata: sport = olahraga]`;
   const tahu = fakta.length ? '\n\nYang kamu ketahui tentang pengguna:\n' + fakta.map(f => '- ' + f.fakta).join('\n') : '';
   return m.gaya(nama) + ` Sekarang ${sekarang}.` + (berita ? `\n\n${berita}\n` : '') + ` Gunakan pengetahuan tentang pengguna secara wajar, jangan diumbar.` + format + `\n` +
     `Jika pengguna menyampaikan fakta penting tentang dirinya yang berguna untuk percakapan berikutnya ` +
@@ -959,12 +1052,15 @@ function urai(raw){
   const ingatan = [], lupa = [];
   t = t.replace(/\[ingat:\s*([^\]]+)\]/gi, (_, x) => { ingatan.push(x); return ''; });
   t = t.replace(/\[lupakan:\s*([^\]]+)\]/gi, (_, x) => { lupa.push(x); return ''; });
+  const kosakata = [], koreksi = [];
+  t = t.replace(/\[kosakata:\s*([^\]]+)\]/gi, (_, x) => { kosakata.push(x.trim()); return ''; });
+  t = t.replace(/\[koreksi:\s*([^\]]+)\]/gi, (_, x) => { koreksi.push(x.trim().replace(/\s*-+>\s*/g, ' → ')); return ''; });
   let catat = false;
   t = t.replace(/\[catat\]/gi, () => { catat = true; return ''; });
   const m = t.match(/^\s*\[([a-zA-Z]+)\]\s*/);
   if (m) { if (EKS_AI.includes(m[1].toLowerCase())) ekspresi = m[1].toLowerCase(); t = t.slice(m[0].length); }
   t = t.replace(/\[(netral|senang|berpikir|bingung|sedih|kaget)\]/gi, '').replace(/[*_#`]/g, '').trim();
-  return {ekspresi, jawaban: t, ingatan, lupa, catat};
+  return {ekspresi, jawaban: t, ingatan, lupa, catat, kosakata, koreksi};
 }
 async function tanyaAI(pesan){
   const key = kunciOR();
@@ -1000,7 +1096,14 @@ async function tanyaAI(pesan){
   if (!hasil) throw new Error('Model tidak memberi jawaban setelah 3 kali coba (' + info + '). Coba lagi, atau isi kolom Model dengan ID model :free tertentu.');
   // simpan ke riwayat & ingatan
   const balasan = `[${hasil.ekspresi}] ${hasil.jawaban}`;
-  if (!pribadi) { riwayatTutor.push({role:'user', content:pesan}, {role:'assistant', content:balasan}); return hasil; }
+  if (!pribadi) {
+    riwayatTutor.push({role:'user', content:pesan}, {role:'assistant', content:balasan});
+    if (!sesi) sesiBaru(null);
+    sesi.giliran++;
+    for (const x of hasil.kosakata) if (x.length <= 80 && !sesi.kosakata.includes(x) && sesi.kosakata.length < 30) sesi.kosakata.push(x);
+    for (const x of hasil.koreksi) if (x.length <= 160 && !sesi.koreksi.includes(x) && sesi.koreksi.length < 30) sesi.koreksi.push(x);
+    return hasil;
+  }
   riwayat.push({role:'user', content:pesan}, {role:'assistant', content:balasan});
   DB.simpanPesan('user', pesan).then(() => DB.simpanPesan('assistant', balasan));
   for (const x of hasil.lupa) await lupakan(x);
@@ -1437,7 +1540,7 @@ function perintahTimer(pesan){
     const x = pilihTimer(t); tambahTimer(x.id, det);
     return j(`Ditambah ${ucapDurasi(det, false)}. Sisa ${ucapDurasi(Math.ceil(sisaMs(x) / 1000), false)}.`, `Added ${ucapDurasi(det, true)}.`);
   }
-  const ingatkan = /^(tolong\s+)?ingatkan\b.*\blagi\b/.test(t);
+  const ingatkan = /^(tolong\s+)?ingatkan\b.*\blagi\b/.test(t) && !awan();
   if ((sebutTimer || ingatkan) && det) {
     if (det > 24 * 3600) return j('Timer maksimal 24 jam.', 'The maximum timer is 24 hours.');
     if (det < 5) return j('Timer minimal 5 detik.', 'The minimum timer is 5 seconds.');
@@ -1447,6 +1550,124 @@ function perintahTimer(pesan){
   if (sebutTimer && /(pasang|setel|set|buat|bikin|mulai|start|timer\s*$)/.test(t))
     return j('Berapa lama timernya? Misalnya "timer 10 menit".', 'How long should the timer be? For example, "timer 5 minutes".');
   return null;
+}
+
+// ===== Pengingat lewat Telegram =====
+const BULAN_ID = ['januari','februari','maret','april','mei','juni','juli','agustus','september','oktober','november','desember'];
+const HARI_ID = ['minggu','senin','selasa','rabu','kamis','jumat','sabtu'];
+const KATA_INGAT = /^(tolong\s+)?(ingatkan|ingetin|ingatin|remind me)\b|^(buat|buatkan|pasang|tambah|tambahkan)\s+pengingat\b/i;
+const KATA_DAFTAR_INGAT = /^(\/pengingat|(daftar|lihat|tampilkan|cek)\s+pengingat|pengingat\s+(apa saja|saya|hari ini|aktif))\b/i;
+const KATA_HAPUS_INGAT = /^(hapus|batalkan|batal)\s+(semua\s+)?pengingat\b\s*(.*)$/i;
+function uraiPengingat(asli){
+  let t = kataKeAngka(asli.toLowerCase()).replace(/[,!?]/g, ' ').replace(/\s+/g, ' ').trim();
+  t = t.replace(/^(tolong\s+)?(ingatkan|ingetin|ingatin|remind me|(buat|buatkan|pasang|tambah|tambahkan)\s+pengingat)(\s+(saya|aku|gue|ku|ya))?\s*/, '');
+  const kini = new Date();
+  let waktu = null, hapus = [];
+  // relatif: "2 jam lagi", "dalam 30 menit"
+  const rel = t.match(/(?:dalam\s+(\d+(?:\.\d+)?)\s*(menit|jam|hari))|(?:(\d+(?:\.\d+)?)\s*(menit|jam|hari)\s+(?:lagi|kemudian|dari sekarang))/);
+  if (rel) {
+    const n = parseFloat(rel[1] || rel[3]), u = rel[2] || rel[4];
+    waktu = new Date(kini.getTime() + n * (u === 'menit' ? 60e3 : u === 'jam' ? 3600e3 : 86400e3));
+    hapus.push(rel[0]);
+  } else {
+    let tgl = new Date(kini), adaHari = false, hariIniTegas = false, namaHari = false;
+    let m;
+    if ((m = t.match(/\btanggal\s+(\d{1,2})(?:\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember))?/))) {
+      const d = +m[1], bl = m[2] ? BULAN_ID.indexOf(m[2]) : kini.getMonth();
+      tgl = new Date(kini.getFullYear(), bl, d);
+      if (tgl < new Date(kini.getFullYear(), kini.getMonth(), kini.getDate())) tgl = m[2] ? new Date(kini.getFullYear() + 1, bl, d) : new Date(kini.getFullYear(), kini.getMonth() + 1, d);
+      adaHari = true; hapus.push(m[0]);
+    } else if ((m = t.match(/\b(besok lusa|lusa|besok|hari ini|nanti)\b/))) {
+      const geser = {'hari ini':0, nanti:0, besok:1, lusa:2, 'besok lusa':2}[m[1]];
+      tgl.setDate(tgl.getDate() + geser); adaHari = m[1] !== 'nanti'; hariIniTegas = geser === 0 && m[1] === 'hari ini'; hapus.push(m[0]);
+    } else if ((m = t.match(/\b(?:hari\s+)?(minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b(?:\s+(depan))?/))) {
+      const target = HARI_ID.indexOf(m[1].replace("'", '')); let g = (target - kini.getDay() + 7) % 7;
+      if (m[2] && g === 0) g = 7;
+      tgl.setDate(tgl.getDate() + g); adaHari = true; namaHari = true; hapus.push(m[0]);
+    }
+    let jam = null, mnt = 0;
+    if ((m = t.match(/\b(?:jam|pukul|pkl\.?)\s*(\d{1,2})(?:[.:](\d{2}))?/)) || (m = t.match(/\b(\d{1,2})[.:](\d{2})\b/))) {
+      jam = +m[1]; mnt = m[2] ? +m[2] : 0; hapus.push(m[0]);
+    }
+    const p = t.match(/\b(subuh|dini hari|pagi|siang|sore|petang|malam)\b/);
+    if (p) hapus.push(p[0]);
+    const per = p?.[1];
+    if (jam == null && per) jam = {subuh:5, 'dini hari':3, pagi:7, siang:12, sore:16, petang:18, malam:19}[per];
+    if (jam != null && per) {
+      if (per === 'siang' && jam >= 1 && jam <= 5) jam += 12;
+      else if ((per === 'sore' || per === 'petang') && jam < 12) jam += 12;
+      else if (per === 'malam' && jam >= 6 && jam < 12) jam += 12;
+      else if (per === 'malam' && jam === 12) jam = 0;
+    }
+    if (jam == null && adaHari) jam = 7;
+    if (jam == null) return {galat: 'Kapan saya harus mengingatkan? Contoh: "ingatkan jam 3 sore minum air", "ingatkan besok pagi bawa flashdisk", atau "ingatkan 2 jam lagi angkat jemuran".'};
+    if (jam > 23 || mnt > 59) return {galat: 'Jamnya tidak valid. Contoh: "jam 15.30" atau "jam 3 sore".'};
+    waktu = new Date(tgl.getFullYear(), tgl.getMonth(), tgl.getDate(), jam, mnt, 0);
+    if (waktu <= kini) {
+      if (!adaHari && !per && jam < 12 && new Date(waktu.getTime() + 12 * 3600e3) > kini) waktu = new Date(waktu.getTime() + 12 * 3600e3);
+      else if (!adaHari) waktu = new Date(waktu.getTime() + 86400e3);
+      else if (namaHari) waktu = new Date(waktu.getTime() + 7 * 86400e3);
+      else return {galat: 'Waktu itu sudah lewat. Sebutkan waktu yang akan datang.'};
+    }
+  }
+  let pesan = t;
+  for (const h of hapus) pesan = pesan.replace(h, ' ');
+  pesan = pesan.replace(/\b(pada|nanti|untuk|supaya|agar|biar|buat|tentang|soal|ya|dong|deh|tolong)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const asliKata = Object.fromEntries(asli.split(/\s+/).map(w => [w.toLowerCase().replace(/[^\p{L}\p{N}-]/gu, ''), w.replace(/[,!?.]+$/, '')]));
+  pesan = pesan.split(' ').map(w => asliKata[w] && asliKata[w].toLowerCase() === w ? asliKata[w] : w).join(' ');   // pertahankan huruf besar asli (mis. MGMP)
+  pesan = (pesan.charAt(0).toUpperCase() + pesan.slice(1)).slice(0, 300) || 'Pengingat';
+  return {waktu, pesan};
+}
+function teksWaktu(d){
+  const kini = new Date(), besok = new Date(kini); besok.setDate(kini.getDate() + 1);
+  const jam = d.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', hour12:false}).replace(':', '.');
+  if (d.toDateString() === kini.toDateString()) return 'hari ini jam ' + jam;
+  if (d.toDateString() === besok.toDateString()) return 'besok jam ' + jam;
+  return d.toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long'}) + ' jam ' + jam;
+}
+function kartuPengingat(daftar, judul){
+  const box = document.createElement('div'); box.className = 'msg a draf';
+  const h = document.createElement('b'); h.textContent = judul; box.appendChild(h);
+  if (!daftar.length) { const k = document.createElement('div'); k.className = 'small'; k.textContent = 'Tidak ada pengingat aktif.'; box.appendChild(k); }
+  for (const p of daftar) {
+    const baris = document.createElement('div'); baris.className = 'aksi'; baris.style.alignItems = 'center';
+    const tx = document.createElement('span'); tx.style.flex = '1'; tx.textContent = `⏰ ${teksWaktu(new Date(p.waktu))} — ${p.pesan}`;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'alt'; b.textContent = 'Batalkan';
+    b.onclick = async () => { try { await rpc('asisten_hapus_pengingat', {p_id: p.id}); tx.style.textDecoration = 'line-through'; b.remove(); } catch(e) { status('Gagal membatalkan: ' + e.message); } };
+    baris.append(tx, b); box.appendChild(baris);
+  }
+  const k = document.createElement('div'); k.className = 'small'; k.textContent = 'Dikirim lewat bot Telegram, tetap sampai walau aplikasi ditutup.'; box.appendChild(k);
+  $('log').appendChild(box); $('log').scrollTop = $('log').scrollHeight;
+}
+function cekPengingat(pesan){
+  return MODE[mode].pribadi && (KATA_INGAT.test(pesan) || KATA_DAFTAR_INGAT.test(pesan) || KATA_HAPUS_INGAT.test(pesan));
+}
+async function perintahPengingat(pesan){
+  if (!awan()) return 'Pengingat lewat Telegram butuh kode rahasia Supabase di Pengaturan. Untuk sementara, pakai timer, misalnya "timer 10 menit".';
+  if (KATA_DAFTAR_INGAT.test(pesan)) {
+    const d = await rpc('asisten_daftar_pengingat');
+    kartuPengingat(d || [], '📋 Pengingat aktif');
+    return d?.length ? `Ada ${d.length} pengingat aktif. ${d.length <= 3 ? d.map(p => teksWaktu(new Date(p.waktu)) + ', ' + p.pesan).join('. ') + '.' : 'Daftarnya ada di layar.'}` : 'Tidak ada pengingat aktif.';
+  }
+  const mh = pesan.match(KATA_HAPUS_INGAT);
+  if (mh) {
+    const d = await rpc('asisten_daftar_pengingat') || [];
+    if (!d.length) return 'Tidak ada pengingat aktif.';
+    let sasaran;
+    if (mh[2]) sasaran = d;
+    else {
+      const kunci = mh[3].toLowerCase().replace(/[.!?]/g, '').trim();
+      sasaran = kunci ? d.filter(p => p.pesan.toLowerCase().includes(kunci)) : [d[d.length - 1]];
+    }
+    if (!sasaran.length) { kartuPengingat(d, '📋 Pengingat aktif'); return 'Pengingat itu tidak ketemu. Ini daftar yang aktif; ketuk Batalkan pada yang dimaksud.'; }
+    for (const p of sasaran) await rpc('asisten_hapus_pengingat', {p_id: p.id});
+    return sasaran.length === 1 ? `Pengingat "${sasaran[0].pesan}" dibatalkan.` : `${sasaran.length} pengingat dibatalkan.`;
+  }
+  const u = uraiPengingat(pesan);
+  if (u.galat) return u.galat;
+  const r = await rpc('asisten_tambah_pengingat', {p_waktu: u.waktu.toISOString(), p_pesan: u.pesan});
+  kartuPengingat([r], '✅ Pengingat dibuat');
+  return `Oke, saya ingatkan lewat Telegram ${teksWaktu(new Date(r.waktu))}: ${r.pesan}.`;
 }
 
 // ===== Mode tangan bebas =====
@@ -1474,8 +1695,20 @@ async function kirim(pesan, dariSuara = false){
   pesan = pesan.trim();
   if (!pesan || sibuk) return;
   $('teks').value = '';
+  if (cekPengingat(pesan)) {
+    tambah(pesan, 'u'); sibuk = true; setEkspresi('berpikir'); status('Mengatur pengingat…');
+    let j;
+    try { j = await perintahPengingat(pesan); } catch(e) { j = 'Pengingat gagal: ' + e.message; }
+    sibuk = false; tambah(j, /gagal/i.test(j) ? 'e' : 'a'); ucapkan(j, /gagal|lewat|tidak valid/i.test(j) ? 'bingung' : 'senang');
+    return;
+  }
   const jt = perintahTimer(pesan);
   if (jt) { tambah(pesan, 'u'); tambah(jt, 'a'); ucapkan(jt, 'senang'); return; }
+  if (mode === 'tutor') {
+    if (KATA_AKHIR_SESI.test(pesan)) { tambah(pesan, 'u'); akhiriSesi(); return; }
+    const mt = pesan.match(KATA_TOPIK), kt = mt && cariTopik(mt[1]);
+    if (kt) { tambah(pesan, 'u'); mulaiTopik(kt); return; }
+  }
   const tm = pesan.match(KATA_TEMA);
   if (tm) {
     tambah(pesan, 'u');
