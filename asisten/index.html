@@ -293,7 +293,7 @@ body.hud .berita a{color:#e9fbff}
     <label for="temaSel">Tampilan</label>
     <select id="temaSel"><option value="biasa">Biasa</option><option value="hud">HUD futuristik</option></select>
     <p class="small">Atau ucapkan/ketik "tampilan HUD" dan "tampilan biasa".</p>
-    <p class="small"><b>Pengingat (lewat Telegram):</b> "ingatkan jam 3 sore minum air", "ingatkan besok pagi bawa flashdisk", "ingatkan hari Senin jam 9 rapat", "ingatkan 2 jam lagi angkat jemuran", "daftar pengingat", "hapus pengingat minum air".</p>
+    <p class="small"><b>Pengingat (lewat Telegram):</b> "ingatkan jam 3 sore minum air", "ingatkan besok pagi bawa flashdisk", "ingatkan hari Senin jam 9 rapat", "ingatkan 2 jam lagi angkat jemuran", berulang: "ingatkan setiap hari jam 9 malam minum air", "ingatkan setiap Senin dan Kamis jam 6.30 bawa laptop", "ingatkan setiap hari kerja jam 6 pagi absen", "ingatkan setiap bulan tanggal 25 bayar listrik", "daftar pengingat", "hapus pengingat minum air".</p>
     <p class="small"><b>Timer:</b> "timer 10 menit masak mie", "pasang timer setengah jam", "sisa timer", "tambah 5 menit", "jeda timer", "lanjutkan timer", "batalkan timer", "batalkan semua timer". Timer hanya berbunyi selama aplikasi terbuka; layar dijaga tetap menyala selama timer berjalan.</p>
   </details>
   </section>
@@ -1558,7 +1558,89 @@ const HARI_ID = ['minggu','senin','selasa','rabu','kamis','jumat','sabtu'];
 const KATA_INGAT = /^(tolong\s+)?(ingatkan|ingetin|ingatin|remind me)\b|^(buat|buatkan|pasang|tambah|tambahkan)\s+pengingat\b/i;
 const KATA_DAFTAR_INGAT = /^(\/pengingat|(daftar|lihat|tampilkan|cek)\s+pengingat|pengingat\s+(apa saja|saya|hari ini|aktif))\b/i;
 const KATA_HAPUS_INGAT = /^(hapus|batalkan|batal)\s+(semua\s+)?pengingat\b\s*(.*)$/i;
+const NAMA_HARI = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const POLA_HARI = "(?:minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)";
+// kenali pola berulang; kembalikan {ulang, hapus} atau null
+function deteksiUlang(t){
+  let m;
+  if ((m = t.match(/\b(?:setiap|tiap)\s+hari\s+kerja\b|\bsenin\s*(?:sampai|s\/d|-|hingga|sd)\s*jum'?at\b|\bhari\s+kerja\b/))) return {ulang: 'kerja', hapus: m[0]};
+  if ((m = t.match(/\b(?:setiap|tiap)\s+bulan(?:\s+(?=tanggal))?|\b(?:setiap|tiap)\s+(?=tanggal)/))) return {ulang: 'bulanan', hapus: m[0]};
+  const daftar = new RegExp(`\\b(?:setiap|tiap)\\s+(?:hari\\s+)?(${POLA_HARI}(?:\\s*(?:,|dan|&)\\s*(?:hari\\s+)?${POLA_HARI})*)\\b`);
+  if ((m = t.match(new RegExp(`\\b(?:setiap|tiap)\\s+hari\\s+${POLA_HARI}`))) || ((m = t.match(daftar)) && !/^(?:setiap|tiap)\s+minggu$/.test(m[0].trim()))) {
+    if (!m[1]) m = t.match(daftar);
+    const hari = [...new Set(m[1].split(/\s*(?:,|dan|&)\s*/).map(x => HARI_ID.indexOf(x.replace(/^hari\s+/, '').replace("'", ''))).filter(x => x >= 0))].sort();
+    if (hari.length) return {ulang: 'hari:' + hari.join(','), hapus: m[0]};
+  }
+  if ((m = t.match(/\b(?:setiap|tiap)\s+minggu\b/))) return {ulang: 'minggu-rancu', hapus: m[0]};
+  if ((m = t.match(/\b(?:setiap|tiap)\s+hari\b/))) return {ulang: 'harian', hapus: m[0]};
+  if ((m = t.match(/\b(?:setiap|tiap)\s+(?=(?:subuh|pagi|siang|sore|petang|malam)\b)/))) return {ulang: 'harian', hapus: m[0]};
+  if (/\b(?:setiap|tiap)\s+(?:\d+\s+)?(?:jam|menit|tahun)\b/.test(t)) return {ulang: 'tidak-didukung', hapus: ''};
+  return null;
+}
+function labelUlang(u, waktu){
+  if (!u) return '';
+  if (u === 'harian') return 'setiap hari';
+  if (u === 'kerja') return 'setiap hari kerja';
+  if (u === 'mingguan') return 'setiap ' + NAMA_HARI[new Date(waktu).getDay()];
+  if (u === 'bulanan') return 'setiap bulan tanggal ' + new Date(waktu).getDate();
+  if (u.startsWith('hari:')) return 'setiap ' + u.slice(5).split(',').map(i => NAMA_HARI[+i]).join(', ');
+  return '';
+}
+// ambil jam dari kalimat (jam 9, pukul 15.30, jam 7 malam, "pagi" saja)
+function jamDari(t){
+  let m, jam = null, mnt = 0; const hapus = [];
+  if ((m = t.match(/\b(?:jam|pukul|pkl\.?)\s*(\d{1,2})(?:[.:](\d{2}))?/)) || (m = t.match(/\b(\d{1,2})[.:](\d{2})\b/))) { jam = +m[1]; mnt = m[2] ? +m[2] : 0; hapus.push(m[0]); }
+  let p = null;
+  if (jam != null) {
+    const pos = t.indexOf(hapus[0]);
+    const ikut = t.slice(pos + hapus[0].length).match(/^\s+(subuh|dini hari|pagi|siang|sore|petang|malam)\b/);
+    const depan = t.slice(0, pos).match(/\b(subuh|dini hari|pagi|siang|sore|petang|malam)\s+$/);   // "nanti malam jam 8"
+    if (ikut) { p = ikut; hapus.push(ikut[0]); } else if (depan) { p = depan; hapus.push(depan[0]); }
+  }
+  else { p = t.match(/\b(?:nanti\s+|besok\s+)?(subuh|dini hari|pagi|siang|sore|petang|malam)\b/); if (p) hapus.push(p[1]); }
+  const per = p?.[1];
+  if (jam == null && per) jam = {subuh:5, 'dini hari':3, pagi:7, siang:12, sore:16, petang:18, malam:19}[per];
+  if (jam == null) return null;
+  if (per === 'siang' && jam >= 1 && jam <= 5) jam += 12;
+  else if ((per === 'sore' || per === 'petang') && jam < 12) jam += 12;
+  else if (per === 'malam' && jam >= 6 && jam < 12) jam += 12;
+  else if (per === 'malam' && jam === 12) jam = 0;
+  if (jam > 23 || mnt > 59) return null;
+  return {jam, mnt, hapus};
+}
+function rapikanPesan(t, hapus, asli){
+  let pesan = t;
+  for (const h of hapus) if (h) pesan = pesan.replace(h, ' ');
+  pesan = pesan.replace(/\b(pada|nanti|untuk|supaya|agar|biar|buat|tentang|soal|ya|dong|deh|tolong)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const asliKata = Object.fromEntries(asli.split(/\s+/).map(w => [w.toLowerCase().replace(/[^\p{L}\p{N}-]/gu, ''), w.replace(/[,!?.]+$/, '')]));
+  pesan = pesan.split(' ').map(w => asliKata[w] && asliKata[w].toLowerCase() === w ? asliKata[w] : w).join(' ');
+  return (pesan.charAt(0).toUpperCase() + pesan.slice(1)).slice(0, 300) || 'Pengingat';
+}
 function uraiPengingat(asli){
+  {
+    const t0 = kataKeAngka(asli.toLowerCase()).replace(/[,!?]/g, m => m === ',' ? ' , ' : ' ').replace(/\s+/g, ' ').trim()
+      .replace(/^(tolong\s+)?(ingatkan|ingetin|ingatin|remind me|(buat|buatkan|pasang|tambah|tambahkan)\s+pengingat)(\s+(saya|aku|gue|ku|ya))?\s*/, '');
+    const ul = deteksiUlang(t0);
+    if (ul?.ulang === 'minggu-rancu') return {galat: 'Maksudnya setiap hari Minggu, atau seminggu sekali di hari lain? Coba "setiap hari Minggu jam 8 pagi …" atau "setiap Sabtu jam 8 pagi …".'};
+    if (ul?.ulang === 'tidak-didukung') return {galat: 'Pengingat berulang yang bisa: setiap hari, setiap hari kerja, setiap Senin (atau beberapa hari), setiap minggu, dan setiap bulan tanggal tertentu.'};
+    if (ul && ul.ulang !== 'bulanan') {
+      const sisa = t0.replace(ul.hapus, ' ').replace(/\s,\s/g, ' ');
+      const j = jamDari(sisa);
+      if (!j) return {galat: `Jam berapa pengingatnya? Contoh: "ingatkan ${labelUlang(ul.ulang, new Date())} jam 7 pagi ${sisa.trim() || 'minum air'}".`};
+      const kini = new Date(); let waktu = null;
+      for (let i = 0; i <= 8 && !waktu; i++) {
+        const d = new Date(kini.getFullYear(), kini.getMonth(), kini.getDate() + i, j.jam, j.mnt, 0), dow = d.getDay();
+        const cocok = ul.ulang === 'harian' || ul.ulang === 'mingguan' || (ul.ulang === 'kerja' && dow >= 1 && dow <= 5) || (ul.ulang.startsWith('hari:') && ul.ulang.slice(5).split(',').includes(String(dow)));
+        if (cocok && d > kini) waktu = d;
+      }
+      return {waktu, ulang: ul.ulang, pesan: rapikanPesan(sisa.replace(/\s,\s/g, ' '), j.hapus, asli)};
+    }
+    if (ul?.ulang === 'bulanan') {
+      const r = uraiPengingat(asli.replace(/\b(setiap|tiap)\s+(bulan\s+)?/i, ''));
+      return r.galat ? r : {...r, ulang: 'bulanan'};
+    }
+  }
+
   let t = kataKeAngka(asli.toLowerCase()).replace(/[,!?]/g, ' ').replace(/\s+/g, ' ').trim();
   t = t.replace(/^(tolong\s+)?(ingatkan|ingetin|ingatin|remind me|(buat|buatkan|pasang|tambah|tambahkan)\s+pengingat)(\s+(saya|aku|gue|ku|ya))?\s*/, '');
   const kini = new Date();
@@ -1585,23 +1667,12 @@ function uraiPengingat(asli){
       if (m[2] && g === 0) g = 7;
       tgl.setDate(tgl.getDate() + g); adaHari = true; namaHari = true; hapus.push(m[0]);
     }
-    let jam = null, mnt = 0;
-    if ((m = t.match(/\b(?:jam|pukul|pkl\.?)\s*(\d{1,2})(?:[.:](\d{2}))?/)) || (m = t.match(/\b(\d{1,2})[.:](\d{2})\b/))) {
-      jam = +m[1]; mnt = m[2] ? +m[2] : 0; hapus.push(m[0]);
-    }
-    const p = t.match(/\b(subuh|dini hari|pagi|siang|sore|petang|malam)\b/);
-    if (p) hapus.push(p[0]);
-    const per = p?.[1];
-    if (jam == null && per) jam = {subuh:5, 'dini hari':3, pagi:7, siang:12, sore:16, petang:18, malam:19}[per];
-    if (jam != null && per) {
-      if (per === 'siang' && jam >= 1 && jam <= 5) jam += 12;
-      else if ((per === 'sore' || per === 'petang') && jam < 12) jam += 12;
-      else if (per === 'malam' && jam >= 6 && jam < 12) jam += 12;
-      else if (per === 'malam' && jam === 12) jam = 0;
-    }
+    const jd = jamDari(t);
+    let jam = jd ? jd.jam : null, mnt = jd ? jd.mnt : 0;
+    if (jd) hapus.push(...jd.hapus);
+    const per = jd && jd.hapus.length > (/(jam|pukul|pkl|\d[.:]\d)/.test(jd.hapus[0]) ? 1 : 0) || (jd && !/(jam|pukul|pkl|\d[.:]\d)/.test(jd.hapus[0]));
     if (jam == null && adaHari) jam = 7;
     if (jam == null) return {galat: 'Kapan saya harus mengingatkan? Contoh: "ingatkan jam 3 sore minum air", "ingatkan besok pagi bawa flashdisk", atau "ingatkan 2 jam lagi angkat jemuran".'};
-    if (jam > 23 || mnt > 59) return {galat: 'Jamnya tidak valid. Contoh: "jam 15.30" atau "jam 3 sore".'};
     waktu = new Date(tgl.getFullYear(), tgl.getMonth(), tgl.getDate(), jam, mnt, 0);
     if (waktu <= kini) {
       if (!adaHari && !per && jam < 12 && new Date(waktu.getTime() + 12 * 3600e3) > kini) waktu = new Date(waktu.getTime() + 12 * 3600e3);
@@ -1631,7 +1702,7 @@ function kartuPengingat(daftar, judul){
   if (!daftar.length) { const k = document.createElement('div'); k.className = 'small'; k.textContent = 'Tidak ada pengingat aktif.'; box.appendChild(k); }
   for (const p of daftar) {
     const baris = document.createElement('div'); baris.className = 'aksi'; baris.style.alignItems = 'center';
-    const tx = document.createElement('span'); tx.style.flex = '1'; tx.textContent = `⏰ ${teksWaktu(new Date(p.waktu))} — ${p.pesan}`;
+    const tx = document.createElement('span'); tx.style.flex = '1'; tx.textContent = `${p.ulang ? '🔁' : '⏰'} ${teksWaktu(new Date(p.waktu))}${p.ulang ? ' (' + labelUlang(p.ulang, p.waktu) + ')' : ''} — ${p.pesan}`;
     const b = document.createElement('button'); b.type = 'button'; b.className = 'alt'; b.textContent = 'Batalkan';
     b.onclick = async () => { try { await rpc('asisten_hapus_pengingat', {p_id: p.id}); tx.style.textDecoration = 'line-through'; b.remove(); } catch(e) { status('Gagal membatalkan: ' + e.message); } };
     baris.append(tx, b); box.appendChild(baris);
@@ -1665,9 +1736,10 @@ async function perintahPengingat(pesan){
   }
   const u = uraiPengingat(pesan);
   if (u.galat) return u.galat;
-  const r = await rpc('asisten_tambah_pengingat', {p_waktu: u.waktu.toISOString(), p_pesan: u.pesan});
+  const r = await rpc('asisten_tambah_pengingat', {p_waktu: u.waktu.toISOString(), p_pesan: u.pesan, ...(u.ulang ? {p_ulang: u.ulang} : {})});
   kartuPengingat([r], '✅ Pengingat dibuat');
-  return `Oke, saya ingatkan lewat Telegram ${teksWaktu(new Date(r.waktu))}: ${r.pesan}.`;
+  return r.ulang ? `Oke, saya ingatkan lewat Telegram ${labelUlang(r.ulang, r.waktu)} jam ${new Date(r.waktu).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', hour12:false}).replace(':', '.')}: ${r.pesan}. Pertama kali ${teksWaktu(new Date(r.waktu))}.`
+    : `Oke, saya ingatkan lewat Telegram ${teksWaktu(new Date(r.waktu))}: ${r.pesan}.`;
 }
 
 // ===== Mode tangan bebas =====
