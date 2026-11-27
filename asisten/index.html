@@ -36,6 +36,7 @@ h1{font-size:22px;margin:4px 0 0;text-align:center}
 #log{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;height:32vh;overflow-y:auto}
 .msg{margin:6px 0;padding:8px 12px;border-radius:14px;max-width:85%;white-space:pre-wrap;overflow-wrap:anywhere}
 .u{margin-left:auto;background:var(--accent);color:#fff}
+.msg img.fotoKirim{display:block;max-width:220px;width:100%;border-radius:10px;margin-bottom:4px}
 .a{background:light-dark(#eef6f4,#21403a)}
 .e{background:#fde2e1;color:#7a1414}
 /* disamarkan tanpa type=password, agar iOS tidak mengisi kata sandi otomatis */
@@ -236,6 +237,8 @@ body.hud .berita a{color:#e9fbff}
   <form id="f">
     <button type="button" id="mic" class="alt" aria-label="Bicara">🎤</button>
     <button type="button" id="bebas" class="alt" aria-pressed="false" aria-label="Mode tangan bebas" title="Mode tangan bebas">🔁</button>
+    <button type="button" id="foto" class="alt" aria-label="Kirim foto" title="Kirim foto">📷</button>
+    <input type="file" id="fotoIn" accept="image/*" hidden>
     <input id="teks" autocomplete="off" placeholder="Tulis pesan…">
     <button id="kirim">Kirim</button>
   </form>
@@ -258,6 +261,9 @@ body.hud .berita a{color:#e9fbff}
     <summary>Pengaturan</summary>
     <label for="key">OpenRouter API key</label>
     <input id="key" class="rahasia" type="text" name="or-key-x" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="sk-or-… dari openrouter.ai/settings/keys">
+    <label for="modelFoto">Model untuk foto</label>
+    <input id="modelFoto" value="openrouter/free">
+    <p class="small">Harus model yang bisa membaca gambar (vision). <b>openrouter/free</b> memilih model gratis yang mendukung gambar. Jangan kirim foto siswa atau dokumen berisi data siswa: foto dikirim ke penyedia model gratis.</p>
     <label for="model">Model</label>
     <input id="model" value="openrouter/free">
     <p class="small">Biarkan <b>openrouter/free</b> agar OpenRouter memilih model gratis yang tersedia, atau tempel ID model berakhiran <b>:free</b>.</p>
@@ -474,7 +480,7 @@ function tambah(teks, kelas){
 }
 
 // ===== Pengaturan =====
-for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn']) { const v = ambilLS(k); if (v) $(k).value = v; }
+for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn','modelFoto']) { const v = ambilLS(k); if (v) $(k).value = v; }
 $('lajuV').textContent = (+$('laju').value).toFixed(1);
 if (!$('key').value) $('set').open = true;
 
@@ -502,7 +508,7 @@ if ('speechSynthesis' in window) { isiSuara(); speechSynthesis.onvoiceschanged =
 $('laju').oninput = () => $('lajuV').textContent = (+$('laju').value).toFixed(1);
 $('simpan').onclick = () => {
   try { $('key').value = kunciOR(); } catch(e) { /* biarkan; pesan muncul saat dipakai */ }
-  for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn']) simpanLS(k, $(k).value.trim());
+  for (const k of ['key','model','nama','laju','kode','panggilan','fishOn','fishId','fishEn','modelFoto']) simpanLS(k, $(k).value.trim());
   simpanLS('suara', $('suara').value); simpanLS('suaraEn', $('suaraEn').value);
   tampilJudul();
   status('Pengaturan disimpan'); $('set').open = false;
@@ -1122,15 +1128,19 @@ function kunciOR(){
 
 // ===== Mencatat makan & olahraga (ke data bot kesehatan) =====
 let draf = null;   // {data, sumber, el}
-async function panggilOR(messages, maxTokens = 3000){
+async function panggilOR(messages, maxTokens = 3000, modelPakai = null){
   const key = kunciOR();
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key,'X-Title':'Asisten Berwajah'},
-    body: JSON.stringify({model: $('model').value.trim() || 'openrouter/free', messages, max_tokens: maxTokens, temperature: 0.2, reasoning: {effort:'low', exclude:true}})
+    body: JSON.stringify({model: modelPakai || $('model').value.trim() || 'openrouter/free', messages, max_tokens: maxTokens, temperature: 0.2, reasoning: {effort:'low', exclude:true}})
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error) throw new Error('OpenRouter: ' + (data.error?.message || res.status));
+  if (!res.ok || data.error) {
+    const m = data.error?.message || String(res.status);
+    if (/image|vision|modalit/i.test(m)) throw new Error('OpenRouter: model ini tidak bisa membaca gambar. Isi "Model untuk foto" di Pengaturan dengan model vision :free. (' + m + ')');
+    throw new Error('OpenRouter: ' + m);
+  }
   let isi = data.choices?.[0]?.message?.content;
   if (Array.isArray(isi)) isi = isi.map(p => p.text || '').join('');
   return String(isi || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
@@ -1741,6 +1751,82 @@ async function perintahPengingat(pesan){
   return r.ulang ? `Oke, saya ingatkan lewat Telegram ${labelUlang(r.ulang, r.waktu)} jam ${new Date(r.waktu).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', hour12:false}).replace(':', '.')}: ${r.pesan}. Pertama kali ${teksWaktu(new Date(r.waktu))}.`
     : `Oke, saya ingatkan lewat Telegram ${teksWaktu(new Date(r.waktu))}: ${r.pesan}.`;
 }
+
+// ===== Foto =====
+async function kecilkanFoto(file, maks = 1024){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, gagal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => gagal(new Error('Foto tidak bisa dibuka')); i.src = url; });
+    const sk = Math.min(1, maks / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * sk); c.height = Math.round(img.naturalHeight * sk);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.82);
+  } finally { URL.revokeObjectURL(url); }
+}
+function tambahFoto(dataUrl, teks){
+  const d = document.createElement('div'); d.className = 'msg u';
+  const img = document.createElement('img'); img.className = 'fotoKirim'; img.src = dataUrl; img.alt = 'Foto yang dikirim';
+  d.appendChild(img);
+  if (teks) d.appendChild(document.createTextNode(teks));
+  $('log').appendChild(d); $('log').scrollTop = $('log').scrollHeight;
+}
+const modelFoto = () => $('modelFoto').value.trim() || 'openrouter/free';
+const isiGambar = (teks, dataUrl) => [{type:'text', text: teks}, {type:'image_url', image_url:{url: dataUrl}}];
+async function kirimFoto(file){
+  if (sibuk || !file) return;
+  if (!/^image\//.test(file.type)) { status('Berkas itu bukan gambar.'); return; }
+  const tanya = $('teks').value.trim(); $('teks').value = '';
+  let dataUrl;
+  try { dataUrl = await kecilkanFoto(file); } catch(e) { tambah(e.message, 'e'); return; }
+  tambahFoto(dataUrl, tanya);
+  sibuk = true; setEkspresi('berpikir'); status('Melihat foto…');
+  try {
+    if (draf && MODE[mode].pribadi) batalDraf(true);
+    // 1) mode pribadi: foto makanan → draf catatan (dengan konfirmasi)
+    if (MODE[mode].pribadi && awan() && (!tanya || /(makan|minum|catat|kalori|sarapan|camilan|porsi|gizi)/i.test(tanya))) {
+      let berat = null;
+      try { berat = (await rpc('asisten_kesehatan', {p_hari: 1}))?.profil?.berat_kg || null; } catch(e) {}
+      const sistem = promptEstimasi(berat) + '\n8. Masukan berupa FOTO: perkirakan hanya dari yang terlihat, jangan mengarang isi yang tidak terlihat. Bila foto bukan makanan/minuman, keluarkan {"jenis":"lainnya"}.';
+      const d = rapikanDraf(await panggilOR([{role:'system', content: sistem}, {role:'user', content: isiGambar(tanya ? 'Keterangan pengguna: ' + tanya : 'Foto dari pengguna.', dataUrl)}], 3000, modelFoto()));
+      if (d && d.jenis === 'makan') {
+        sibuk = false;
+        draf = {data: d, sumber: 'foto', el: kartuDraf(d)};
+        const t = totalDraf(d);
+        ucapkan(`Dari fotonya, perkiraannya ${rg(t.kmin, t.kmaks).replace('–', ' sampai ')} kalori. Simpan?`, 'senang');
+        return;
+      }
+      if (tanya && /(makan|catat|kalori)/i.test(tanya) && (!d || d.jenis !== 'makan')) {
+        sibuk = false; const j = 'Saya tidak melihat makanan yang jelas di foto itu. Coba foto dari atas dengan cahaya cukup.';
+        tambah(j, 'a'); ucapkan(j, 'bingung'); return;
+      }
+    }
+    // 2) selain itu: jelaskan foto (Tutor: latihan "describe the picture")
+    const pribadi = MODE[mode].pribadi;
+    const pertanyaan = tanya || (pribadi ? 'Apa yang ada di foto ini? Jelaskan singkat dan bermanfaat.' : 'Here is a picture.');
+    const sistem = instruksi() + (pribadi
+      ? '\n\nPengguna mengirim FOTO. Jawab berdasarkan yang benar-benar terlihat; bila tidak yakin, katakan tidak yakin. Bila berisi soal, bantu jelaskan langkahnya secara ringkas.'
+      : '\n\nThe student shows a PICTURE. Describe it in 1-2 very simple English sentences using words for what you see, then ask ONE easy question about it. Do not guess who the people are.');
+    const riw = (pribadi ? riwayat : riwayatTutor).slice(-8);
+    const h = urai(await panggilOR([{role:'system', content: sistem}, ...riw, {role:'user', content: isiGambar(pertanyaan, dataUrl)}], 3000, modelFoto()));
+    if (!h.jawaban) throw new Error('model tidak memberi jawaban, coba lagi');
+    const catatanUser = (pribadi ? '[foto] ' : '[photo] ') + (tanya || '');
+    const balasan = `[${h.ekspresi}] ${h.jawaban}`;
+    if (pribadi) {
+      riwayat.push({role:'user', content: catatanUser}, {role:'assistant', content: balasan});
+      DB.simpanPesan('user', catatanUser).then(() => DB.simpanPesan('assistant', balasan));
+    } else {
+      riwayatTutor.push({role:'user', content: catatanUser}, {role:'assistant', content: balasan});
+      if (sesi) { sesi.giliran++; for (const x of h.kosakata) if (!sesi.kosakata.includes(x) && sesi.kosakata.length < 30) sesi.kosakata.push(x); }
+    }
+    sibuk = false;
+    tambah(h.jawaban, 'a'); ucapkan(h.jawaban, h.ekspresi);
+  } catch(e) {
+    sibuk = false;
+    tambah('Foto gagal diproses: ' + e.message, 'e'); setEkspresi('bingung'); status('Ada masalah');
+  }
+}
+$('foto').onclick = () => { bukaKunciSuara(); $('fotoIn').value = ''; $('fotoIn').click(); };
+$('fotoIn').onchange = () => kirimFoto($('fotoIn').files[0]);
 
 // ===== Mode tangan bebas =====
 let tanganBebas = false, kosongBeruntun = 0;
